@@ -108,16 +108,19 @@ export const GameSettings: React.FC = () => {
           <Typography gutterBottom>
             Maximum Allowed Laser Touches: {maxAllowedTouchesValue}
           </Typography>
-          <Slider
-            value={maxAllowedTouchesValue}
-            onChange={handleMaxTouchesChange}
-            aria-labelledby="max-touches-slider"
-            valueLabelDisplay="auto"
-            step={1}
-            marks={marks}
-            min={0}
-            max={connectedLaserCount}
-          />
+          <Box sx={{ px: 1 }}>
+            <Slider
+              value={maxAllowedTouchesValue}
+              onChange={handleMaxTouchesChange}
+              aria-labelledby="max-touches-slider"
+              valueLabelDisplay="auto"
+              step={1}
+              marks={marks}
+              min={0}
+              max={connectedLaserCount}
+              sx={{ mt: 2, mb: 1 }}
+            />
+          </Box>
           <Typography variant="body2" color="text.secondary">
             Maximum number of lasers that can be touched during a run before failing.
           </Typography>
@@ -151,15 +154,20 @@ export const GameSettings: React.FC = () => {
               onChange={handleReactivationTimeChange}
               InputProps={{
                 endAdornment: <InputAdornment position="end">seconds</InputAdornment>,
-              }}
-              inputProps={{
-                min: 0,
-                step: 0.5,
+                inputProps: {
+                  min: 0,
+                  step: 0.5,
+                  style: { textAlign: "right" },
+                },
               }}
               variant="outlined"
               size="small"
-              fullWidth
-              sx={{ mt: 1, mb: 1 }}
+              sx={{
+                mt: 1,
+                mb: 1,
+                width: "100%",
+                maxWidth: "250px",
+              }}
             />
             <Typography variant="body2" color="text.secondary">
               Time (in seconds) before a laser becomes active again after being touched.

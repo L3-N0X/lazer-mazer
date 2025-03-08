@@ -3,6 +3,7 @@ import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
 import Home from "./pages/Home";
 import About from "./pages/About";
 import Settings from "./pages/Settings";
+import Debug from "./pages/Debug";
 import Navbar from "./components/Navbar";
 import { LaserConfigProvider } from "./context/LaserConfigContext";
 import "./App.css";
@@ -13,14 +14,20 @@ const theme = createTheme({
     fontFamily: "Roboto, Arial, sans-serif",
   },
   palette: {
+    mode: "dark",
     primary: {
-      main: "#1976d2",
+      main: "#ff4d4d", // Main dark background for primary elements
     },
     secondary: {
-      main: "#dc004e",
+      main: "#ffa77d", // Red accent
     },
     background: {
-      default: "#f5f5f5",
+      default: "#121212",
+      paper: "#020202",
+    },
+    text: {
+      primary: "#e0e0e0",
+      secondary: "#b0b0b0",
     },
   },
 });
@@ -38,6 +45,7 @@ function App() {
                 <Route path="/" element={<Home />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/debug" element={<Debug />} />
               </Routes>
             </main>
           </div>

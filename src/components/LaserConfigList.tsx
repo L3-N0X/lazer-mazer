@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Button, Typography, Alert } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import { DragIndicator } from "@mui/icons-material";
 import {
   DndContext,
   closestCenter,
@@ -38,18 +39,41 @@ const SortableItem: React.FC<SortableItemProps> = ({ laser, onUpdate, onRemove }
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    position: "relative" as const,
+    zIndex: isDragging ? 1000 : 1,
+    opacity: 1,
   };
 
+  // Create a drag handle component
+  const DragHandleBox = (
+    <Box
+      sx={{
+        cursor: "grab",
+        display: "inline-flex",
+        alignItems: "center",
+        color: "text.secondary",
+        "&:hover": { color: "primary.main" },
+        position: "absolute",
+        left: 8,
+        top: "50%",
+        transform: "translateY(-50%)",
+      }}
+      {...attributes}
+      {...listeners}
+    >
+      <DragIndicator />
+    </Box>
+  );
+
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <div {...listeners}>
-        <LaserConfigItem
-          laser={laser}
-          onUpdate={onUpdate}
-          onRemove={onRemove}
-          isDragging={isDragging}
-        />
-      </div>
+    <div ref={setNodeRef} style={style}>
+      <LaserConfigItem
+        laser={laser}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+        isDragging={isDragging}
+        dragHandle={DragHandleBox}
+      />
     </div>
   );
 };
@@ -134,11 +158,16 @@ export const LaserConfigList: React.FC = () => {
         </Alert>
       )}
 
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ my: 2 }}>
         <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddLaser}>
-          Add New Laser
+          Add
         </Button>
       </Box>
+
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Each laser is mapped to a specific sensor index from the Arduino. The "Sensor #" label shows
+        which sensor value this laser is using.
+      </Typography>
 
       <DndContext
         sensors={sensors}
@@ -166,7 +195,7 @@ export const LaserConfigList: React.FC = () => {
       </DndContext>
 
       <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-        Drag and drop to reorder lasers. This order will be used for matching with the datastream.
+        Drag and drop to reorder lasers in the UI. The sensor mapping will remain unchanged.
       </Typography>
     </Box>
   );

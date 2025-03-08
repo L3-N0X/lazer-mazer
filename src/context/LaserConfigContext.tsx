@@ -5,13 +5,18 @@ import {
   LaserConfigState,
   defaultLaserConfig,
   GameSettings,
+  ArduinoSettings,
 } from "../types/LaserConfig";
+import { invoke } from "@tauri-apps/api/core";
 
 interface LaserConfigContextType {
   laserConfig: LaserConfigState;
   updateLaserConfig: (newConfig: LaserConfigState) => Promise<void>;
   updateLaser: (laser: LaserConfig) => Promise<void>;
   updateGameSettings: (settings: GameSettings) => Promise<void>;
+  updateArduinoSettings: (settings: ArduinoSettings) => Promise<void>;
+  connectArduino: (port: string, baudRate: number) => Promise<void>;
+  disconnectArduino: () => Promise<void>;
   addLaser: () => Promise<void>;
   removeLaser: (id: string) => Promise<void>;
   reorderLasers: (reorderedLasers: LaserConfig[]) => Promise<void>;
@@ -32,6 +37,7 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [laserConfig, setLaserConfig] = useState<LaserConfigState>(defaultLaserConfig);
   const [isLoading, setIsLoading] = useState(true);
   const store = Store.get("laser-config.dat");
+
   // Initialize store
   useEffect(() => {
     const loadConfig = async () => {
@@ -94,14 +100,68 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
     await saveConfig(newConfig);
   };
 
+  const updateArduinoSettings = async (settings: ArduinoSettings) => {
+    const newConfig = {
+      ...laserConfig,
+      arduinoSettings: settings,
+    };
+    setLaserConfig(newConfig);
+    await saveConfig(newConfig);
+  };
+
+  const connectArduino = async (port: string, baudRate: number): Promise<void> => {
+    try {
+      await invoke("configure_serial", { port, baudRate });
+
+      const newArduinoSettings = {
+        ...laserConfig.arduinoSettings,
+        port,
+        baudRate,
+        isConnected: true,
+      };
+
+      await updateArduinoSettings(newArduinoSettings);
+      return;
+    } catch (error) {
+      console.error("Failed to connect to Arduino:", error);
+      throw error;
+    }
+  };
+
+  const disconnectArduino = async () => {
+    try {
+      await invoke("stop_serial");
+
+      const newArduinoSettings = {
+        ...laserConfig.arduinoSettings,
+        isConnected: false,
+      };
+
+      await updateArduinoSettings(newArduinoSettings);
+      return;
+    } catch (error) {
+      console.error("Failed to disconnect from Arduino:", error);
+      throw error;
+    }
+  };
+
   const addLaser = async () => {
     const newId = `${Date.now()}`;
+
+    // Find the first available sensor index (one that's not already in use)
+    const usedIndices = laserConfig.lasers.map((laser) => laser.sensorIndex);
+    let newSensorIndex = 0;
+    while (usedIndices.includes(newSensorIndex)) {
+      newSensorIndex++;
+    }
+
     const newLaser: LaserConfig = {
       id: newId,
       name: `Laser ${laserConfig.lasers.length + 1}`,
       sensitivity: 50,
       order: laserConfig.lasers.length,
       enabled: true,
+      sensorIndex: newSensorIndex, // Assign the first unused sensor index
     };
 
     const newConfig = {
@@ -116,7 +176,7 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const removeLaser = async (id: string) => {
     const updatedLasers = laserConfig.lasers
       .filter((laser) => laser.id !== id)
-      .map((laser, idx) => ({ ...laser, order: idx }));
+      .map((laser, idx) => ({ ...laser, order: idx })); // Only update the display order
 
     const newConfig = { ...laserConfig, lasers: updatedLasers };
     setLaserConfig(newConfig);
@@ -124,10 +184,11 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const reorderLasers = async (reorderedLasers: LaserConfig[]) => {
-    // Update order property based on new array position
+    // Update only the order property based on new array position
+    // Keep the sensorIndex property unchanged
     const updatedLasers = reorderedLasers.map((laser, index) => ({
       ...laser,
-      order: index,
+      order: index, // Only modify the display order
     }));
 
     const newConfig = { ...laserConfig, lasers: updatedLasers };
@@ -142,6 +203,9 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updateLaserConfig,
         updateLaser,
         updateGameSettings,
+        updateArduinoSettings,
+        connectArduino,
+        disconnectArduino,
         addLaser,
         removeLaser,
         reorderLasers,

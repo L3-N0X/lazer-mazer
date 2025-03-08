@@ -1,14 +1,31 @@
-use serialport::SerialPort;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use tauri::Emitter;
+use tauri_plugin_store::StoreExt;
+
+// Store parsed sensor values for use across the application
+#[derive(Clone, serde::Serialize)]
+struct SensorData {
+    values: Vec<u16>,
+}
+
+impl SensorData {
+    fn new() -> Self {
+        Self { values: Vec::new() }
+    }
+
+    fn update(&mut self, values: Vec<u16>) {
+        self.values = values;
+    }
+}
 
 // A simple manager to hold the serial reading thread and a channel to stop it.
 struct SerialManager {
     reading_thread: Option<JoinHandle<()>>,
     stop_sender: Option<Sender<()>>,
+    format_data: bool,
 }
 
 impl SerialManager {
@@ -16,6 +33,7 @@ impl SerialManager {
         Self {
             reading_thread: None,
             stop_sender: None,
+            format_data: false,
         }
     }
 
@@ -28,6 +46,10 @@ impl SerialManager {
             let _ = handle.join();
         }
     }
+
+    fn set_format_mode(&mut self, format: bool) {
+        self.format_data = format;
+    }
 }
 
 // Command to list available serial ports.
@@ -39,18 +61,20 @@ fn list_ports() -> Result<Vec<String>, String> {
 }
 
 // Command to configure and start reading from a serial port.
-// It takes the USB port name and baud rate as parameters.
+// It takes the USB port name, baud rate
 #[tauri::command]
 fn configure_serial(
     port: String,
     baud_rate: u32,
     app_handle: tauri::AppHandle,
     state: tauri::State<Arc<Mutex<SerialManager>>>,
+    sensor_data: tauri::State<Arc<Mutex<SensorData>>>,
 ) -> Result<(), String> {
     // Lock our SerialManager state.
     let mut manager = state.lock().map_err(|e| e.to_string())?;
     // Stop any existing thread.
     manager.stop();
+    // Set the formatting mode
 
     // Try opening the serial port.
     let port_result = serialport::new(port.clone(), baud_rate)
@@ -63,6 +87,8 @@ fn configure_serial(
 
     // Clone the app handle so the thread can emit events.
     let app_handle_clone = app_handle.clone();
+    let sensor_data = Arc::clone(&sensor_data);
+
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(serial_port);
         loop {
@@ -75,8 +101,30 @@ fn configure_serial(
             match reader.read_line(&mut line) {
                 Ok(n) if n > 0 => {
                     let trimmed = line.trim().to_string();
-                    // Emit the "serial-data" event to the frontend.
-                    let _ = app_handle_clone.emit("serial-data", trimmed);
+
+                    // Special case for "buzzer" message
+                    if trimmed == "buzzer" {
+                        let _ = app_handle_clone.emit("buzzer", true);
+                        continue;
+                    }
+
+                    // Parse comma separated values into integers
+                    let values: Result<Vec<u16>, _> =
+                        trimmed.split(',').map(|s| s.parse::<u16>()).collect();
+
+                    if let Ok(parsed_values) = values {
+                        // Update shared sensor data
+                        if let Ok(mut sensor_state) = sensor_data.lock() {
+                            sensor_state.update(parsed_values.clone());
+                        }
+
+                        // Emit formatted data
+                        let _ = app_handle_clone.emit("serial-data", parsed_values);
+                    } else {
+                        // Forward parse errors to the frontend.
+                        let _ = app_handle_clone
+                            .emit("serial-error", format!("parse error: {}", trimmed));
+                    }
                 }
                 Ok(_) => {
                     // No data was available; sleep briefly.
@@ -109,15 +157,22 @@ fn stop_serial(state: tauri::State<Arc<Mutex<SerialManager>>>) -> Result<(), Str
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // Manage the SerialManager state (wrapped in Arc<Mutex<...>> for thread-safe sharing).
+        .plugin(tauri_plugin_store::Builder::new().build())
+        // Manage the SerialManager and SensorData state
         .manage(Arc::new(Mutex::new(SerialManager::new())))
+        .manage(Arc::new(Mutex::new(SensorData::new())))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         // Register our Tauri commands.
         .invoke_handler(tauri::generate_handler![
             list_ports,
             configure_serial,
-            stop_serial
+            stop_serial,
         ])
+        .setup(|app| {
+            app.store("settings.json")?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

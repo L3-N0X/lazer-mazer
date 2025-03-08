@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import { LaserConfigList } from "../components/LaserConfigList";
 import { GameSettings } from "../components/GameSettings";
+import { ArduinoSettings } from "../components/ArduinoSettings";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -61,6 +62,7 @@ const Settings: React.FC = () => {
         <Tabs value={tabValue} onChange={handleTabChange} aria-label="settings tabs">
           <Tab label="Laser Configuration" />
           <Tab label="Game Settings" />
+          <Tab label="Arduino Connection" />
           <Tab label="Sound Settings" />
         </Tabs>
       </Box>
@@ -72,7 +74,7 @@ const Settings: React.FC = () => {
           </Typography>
           <Divider sx={{ mb: 3 }} />
 
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1">
             Configure your lasers below. Each laser can be reordered by dragging to match the order
             of your physical laser setup.
           </Typography>
@@ -87,7 +89,7 @@ const Settings: React.FC = () => {
           </Typography>
           <Divider sx={{ mb: 3 }} />
 
-          <Typography variant="body1" paragraph>
+          <Typography variant="body1">
             Configure game rules and behavior for your laser maze experience.
           </Typography>
 
@@ -96,6 +98,21 @@ const Settings: React.FC = () => {
       </TabPanel>
 
       <TabPanel value={tabValue} index={2}>
+        <Paper elevation={3} sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom>
+            Arduino Connection
+          </Typography>
+          <Divider sx={{ mb: 3 }} />
+
+          <Typography variant="body1">
+            Configure the connection to your Arduino board for laser detection.
+          </Typography>
+
+          <ArduinoSettings />
+        </Paper>
+      </TabPanel>
+
+      <TabPanel value={tabValue} index={3}>
         <Paper elevation={3} sx={{ p: 3 }}>
           <Typography variant="h5" gutterBottom>
             Sound Settings
