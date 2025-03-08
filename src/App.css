@@ -28,6 +28,9 @@
   flex-direction: column;
   justify-content: center;
   text-align: center;
+  width: 100%;
+  padding: 0;
+  max-width: none;
 }
 
 .logo {
@@ -113,4 +116,16 @@ button {
   button:active {
     background-color: #0f0f0f69;
   }
+}
+
+/* Ensure the app takes the full viewport height */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+  overflow-y: auto;
 }
