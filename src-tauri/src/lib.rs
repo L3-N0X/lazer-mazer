@@ -2,7 +2,6 @@ use std::io::{BufRead, BufReader};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tauri_plugin_store::StoreExt;
 
@@ -12,43 +11,14 @@ struct SensorData {
     values: Vec<u16>,
 }
 
-// Add a struct to track button events with timestamps for debouncing
-struct ButtonState {
-    last_start_time: Option<Instant>,
-}
-
-impl ButtonState {
-    fn new() -> Self {
-        Self {
-            last_start_time: None,
-        }
-    }
-
-    // Return true if we should process this event (not a duplicate)
-    fn should_process_start(&mut self) -> bool {
-        let now = Instant::now();
-
-        if let Some(last_time) = self.last_start_time {
-            // If less than 500ms has passed, consider it a duplicate
-            if now.duration_since(last_time) < Duration::from_millis(500) {
-                return false;
-            }
-        }
-
-        // Update the last time and return true to process
-        self.last_start_time = Some(now);
-        true
-    }
-}
-
 // Store parsed sensor values for use across the application
 impl SensorData {
     fn new() -> Self {
-        Self { values: vec![0; 6] }
+        Self { values: Vec::new() }
     }
 
-    fn update(&mut self, values: Vec<u16>) {
-        self.values = values;
+    fn update(&mut self, new_values: Vec<u16>) {
+        self.values = new_values;
     }
 }
 
@@ -114,13 +84,8 @@ fn configure_serial(
     // Properly clone the inner Arc for each state
     let sensor_data_clone = Arc::clone(sensor_data.inner());
 
-    // Create button state for debouncing
-    let button_state = ButtonState::new();
-    let button_state = Arc::new(Mutex::new(button_state));
-
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(serial_port);
-        let button_state = button_state;
 
         loop {
             // Check if a stop signal was received.
@@ -137,11 +102,7 @@ fn configure_serial(
                     if trimmed == "buzzer" {
                         let _ = app_handle_clone.emit("buzzer", true);
                     } else if trimmed == "start" {
-                        // Use our debounce check before emitting the event
-                        let mut state = button_state.lock().unwrap();
-                        if state.should_process_start() {
-                            let _ = app_handle_clone.emit("start-button", true);
-                        }
+                        let _ = app_handle_clone.emit("start-button", true);
                     } else {
                         // Parse comma separated values into integers
                         let values: Result<Vec<u16>, _> =

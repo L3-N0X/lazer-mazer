@@ -50,9 +50,13 @@ jobs:
       - name: install frontend dependencies
         run: |
           npm install -g pnpm
-          pnpm setup
+          # Set PNPM_HOME directly and add to PATH
+          echo "PNPM_HOME=$HOME/Library/pnpm" >> $GITHUB_ENV
+          echo "$HOME/Library/pnpm" >> $GITHUB_PATH
+          # Install dependencies
           pnpm install
-          pnpm install -g @tauri-apps/cli
+          # Install Tauri CLI (using npm instead of pnpm global)
+          npm install -g @tauri-apps/cli
 
       - uses: tauri-apps/tauri-action@v0
         env:
