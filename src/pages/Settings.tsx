@@ -16,6 +16,8 @@ import { LaserConfigList } from "../components/LaserConfigList";
 import { GameSettings } from "../components/GameSettings";
 import { ArduinoSettings } from "../components/ArduinoSettings";
 import { useLaserConfig } from "../context/LaserConfigContext";
+import { SoundSettings } from "../types/LaserConfig";
+import { invoke } from "@tauri-apps/api/core";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -41,7 +43,7 @@ function TabPanel(props: TabPanelProps) {
 
 const Settings: React.FC = () => {
   const [tabValue, setTabValue] = React.useState(0);
-  const { laserConfig, updateSoundSettings } = useLaserConfig();
+  const { laserConfig, updateSoundSettings, updateLaserConfig } = useLaserConfig();
   const { soundSettings } = laserConfig;
 
   const [volume, setVolume] = React.useState<number>(soundSettings.masterVolume);
@@ -56,6 +58,24 @@ const Settings: React.FC = () => {
     setAmbientSound(soundSettings.ambientSound);
     setEffectsSound(soundSettings.effectsSound);
   }, [soundSettings]);
+
+  // Make sure audio settings are updated in the backend when changed
+  useEffect(() => {
+    const syncAudioSettings = async () => {
+      try {
+        await invoke("update_audio_settings", {
+          masterVolume: laserConfig.soundSettings.masterVolume,
+          effectVolume: laserConfig.soundSettings.effectVolume,
+          ambientEnabled: laserConfig.soundSettings.ambientSound,
+          effectsEnabled: laserConfig.soundSettings.effectsSound,
+        });
+      } catch (error) {
+        console.error("Failed to sync audio settings:", error);
+      }
+    };
+
+    syncAudioSettings();
+  }, [laserConfig.soundSettings]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -94,6 +114,17 @@ const Settings: React.FC = () => {
     updateSoundSettings({
       ...soundSettings,
       effectsSound: newValue,
+    });
+  };
+
+  // Handle sound settings changes
+  const handleSoundSettingChange = (setting: keyof SoundSettings, value: number | boolean) => {
+    updateLaserConfig({
+      ...laserConfig,
+      soundSettings: {
+        ...laserConfig.soundSettings,
+        [setting]: value,
+      },
     });
   };
 

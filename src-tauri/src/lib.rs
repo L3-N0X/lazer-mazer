@@ -111,16 +111,23 @@ fn list_ports() -> Result<Vec<String>, String> {
 #[tauri::command]
 fn start_game(
     game_state: tauri::State<Arc<Mutex<GameState>>>,
-    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Update game state
     let mut state = game_state.lock().map_err(|e| e.to_string())?;
     state.start_game();
     state.reset_triggers();
 
-    // Play game start sound
-    if let Ok(mut manager) = audio_manager.lock() {
-        manager.play_effect(SoundEffect::GameStart).ok();
-        manager.start_background_music().ok();
+    // Play game start sound and start background music
+    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
+
+    // Use a single mutable lock for both operations
+    if let Ok(mut manager) = audio_manager.inner().lock() {
+        println!("Playing game start effect and starting background music");
+        let _ = manager.play_effect(SoundEffect::GameStart);
+        let _ = manager.start_background_music();
+    } else {
+        println!("Failed to lock audio manager for game start");
     }
 
     Ok(())
@@ -130,15 +137,40 @@ fn start_game(
 #[tauri::command]
 fn stop_game(
     game_state: tauri::State<Arc<Mutex<GameState>>>,
-    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let mut state = game_state.lock().map_err(|e| e.to_string())?;
     state.stop_game();
 
     // Stop background music
+    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
     if let Ok(manager) = audio_manager.lock() {
         manager.toggle_music(false);
     }
+    Ok(())
+}
+
+// Command to stop all audio playback
+#[tauri::command]
+fn stop_all_audio(app_handle: tauri::AppHandle) -> Result<(), String> {
+    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
+    if let Ok(manager) = audio_manager.lock() {
+        manager.stop_all();
+    }
+    Ok(())
+}
+
+// Command for game over
+#[tauri::command]
+fn game_over(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // Play game over sound
+    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
+    if let Ok(manager) = audio_manager.lock() {
+        manager.play_effect(SoundEffect::GameOver).ok();
+    }
+    // Stop the game and background music
+    let game_state = app_handle.state::<Arc<Mutex<GameState>>>();
+    stop_game(game_state, app_handle.clone()).ok();
 
     Ok(())
 }
@@ -172,19 +204,21 @@ fn update_audio_settings(
     effect_volume: f32,
     ambient_enabled: bool,
     effects_enabled: bool,
-    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    if let Ok(mut manager) = audio_manager.lock() {
-        manager.update_settings(
-            master_volume,
-            effect_volume,
-            ambient_enabled,
-            effects_enabled,
-        );
-        Ok(())
-    } else {
-        Err("Failed to update audio settings".to_string())
+    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
+    {
+        if let Ok(mut manager) = audio_manager.lock() {
+            manager.update_settings(
+                master_volume,
+                effect_volume,
+                ambient_enabled,
+                effects_enabled,
+            );
+            return Ok(());
+        }
     }
+    Err("Failed to lock audio manager".to_string())
 }
 
 // Command to configure and start reading from a serial port.
@@ -238,57 +272,59 @@ fn configure_serial(
                         // Play buzzer sound if game is active
                         if let Ok(game_state) = game_state_clone.lock() {
                             if game_state.is_active {
-                                if let Ok(audio) = audio_manager_clone.lock() {
-                                    let _ = audio.play_effect(SoundEffect::Buzzer);
+                                if let Ok(audio_manager) = audio_manager_clone.lock() {
+                                    let manager = audio_manager;
+                                    let _ = manager.play_effect(SoundEffect::Buzzer);
                                 }
                             }
                         }
-                        continue;
-                    }
-
-                    // Special case for "start" message
-                    if trimmed == "start" {
+                    } else if trimmed == "start" {
                         let _ = app_handle_clone.emit("start-button", true);
                         continue;
-                    }
+                    } else {
+                        // Parse comma separated values into integers
+                        let values: Result<Vec<u16>, _> =
+                            trimmed.split(',').map(|s| s.parse::<u16>()).collect();
 
-                    // Parse comma separated values into integers
-                    let values: Result<Vec<u16>, _> =
-                        trimmed.split(',').map(|s| s.parse::<u16>()).collect();
+                        if let Ok(parsed_values) = values {
+                            // Update shared sensor data
+                            if let Ok(mut sensor_state) = sensor_data_clone.lock() {
+                                sensor_state.update(parsed_values.clone());
+                            }
 
-                    if let Ok(parsed_values) = values {
-                        // Update shared sensor data
-                        if let Ok(mut sensor_state) = sensor_data_clone.lock() {
-                            sensor_state.update(parsed_values.clone());
-                        }
+                            // Process values for audio triggers if game is active
+                            if let Ok(mut game_state) = game_state_clone.lock() {
+                                if game_state.is_active {
+                                    // Check each laser value against its threshold
+                                    for (index, &value) in parsed_values.iter().enumerate() {
+                                        // If laser is triggered and hasn't played sound yet
+                                        if game_state.is_laser_triggered(index, value)
+                                            && !game_state.triggered_lasers.contains(&index)
+                                        {
+                                            // Mark as triggered
+                                            game_state.triggered_lasers.insert(index);
 
-                        // Process values for audio triggers if game is active
-                        if let Ok(mut game_state) = game_state_clone.lock() {
-                            if game_state.is_active {
-                                // Check each laser value against its threshold
-                                for (index, &value) in parsed_values.iter().enumerate() {
-                                    // If laser is triggered and hasn't played sound yet
-                                    if game_state.is_laser_triggered(index, value)
-                                        && !game_state.triggered_lasers.contains(&index)
-                                    {
-                                        // Mark as triggered
-                                        game_state.triggered_lasers.insert(index);
-
-                                        // Play laser broken sound effect
-                                        if let Ok(audio) = audio_manager_clone.lock() {
-                                            let _ = audio.play_effect(SoundEffect::LaserBroken);
+                                            // Play laser broken sound effect
+                                            if let Some(audio_manager) = app_handle_clone
+                                                .try_state::<Arc<Mutex<AudioManager>>>()
+                                            {
+                                                if let Ok(manager) = audio_manager.lock() {
+                                                    let _ = manager
+                                                        .play_effect(SoundEffect::LaserBroken);
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        // Emit formatted data
-                        let _ = app_handle_clone.emit("serial-data", parsed_values);
-                    } else {
-                        // Forward parse errors to the frontend.
-                        let _ = app_handle_clone
-                            .emit("serial-error", format!("parse error: {}", trimmed));
+                            // Emit formatted data
+                            let _ = app_handle_clone.emit("serial-data", parsed_values);
+                        } else {
+                            // Forward parse errors to the frontend.
+                            let _ = app_handle_clone
+                                .emit("serial-error", format!("parse error: {}", trimmed));
+                        }
                     }
                 }
                 Ok(_) => {
@@ -338,20 +374,16 @@ pub fn run() {
             stop_serial,
             start_game,
             stop_game,
+            game_over,
             reactivate_laser,
             update_laser_sensitivities,
             update_audio_settings,
+            stop_all_audio,
         ])
         .setup(|app| {
             app.store("settings.json")?;
-
-            // Initialize audio system during setup
-            if let Some(audio_manager) = app.try_state::<Arc<Mutex<AudioManager>>>() {
-                if let Ok(mut manager) = audio_manager.lock() {
-                    let _ = manager.initialize();
-                }
-            }
-
+            // We don't need to initialize the audio system anymore
+            // as it's handled in the AudioManager::new() method
             Ok(())
         })
         .run(tauri::generate_context!())
