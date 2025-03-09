@@ -7,6 +7,7 @@ import {
   GameSettings,
   ArduinoSettings,
   SoundSettings,
+  Highscore,
 } from "../types/LaserConfig";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -19,9 +20,12 @@ interface LaserConfigContextType {
   updateSoundSettings: (settings: SoundSettings) => Promise<void>;
   connectArduino: (port: string, baudRate: number) => Promise<void>;
   disconnectArduino: () => Promise<void>;
+  enableAutoConnect: (enabled: boolean) => Promise<void>;
   addLaser: () => Promise<void>;
   removeLaser: (id: string) => Promise<void>;
   reorderLasers: (reorderedLasers: LaserConfig[]) => Promise<void>;
+  addHighscore: (highscore: Omit<Highscore, "id" | "date">) => Promise<void>;
+  deleteAllHighscores: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -51,6 +55,12 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         if (hasConfig) {
           const storedConfig = (await store.get("laserConfig")) as LaserConfigState;
+
+          // Ensure highscores array exists (for backward compatibility)
+          if (!storedConfig.highscores) {
+            storedConfig.highscores = [];
+          }
+
           setLaserConfig(storedConfig);
         } else {
           // If no config is found, save the default config
@@ -129,6 +139,7 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
         port,
         baudRate,
         isConnected: true,
+        autoConnectEnabled: true, // Enable auto-connect when manually connecting
       };
 
       await updateArduinoSettings(newArduinoSettings);
@@ -146,6 +157,7 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const newArduinoSettings = {
         ...laserConfig.arduinoSettings,
         isConnected: false,
+        autoConnectEnabled: false, // Disable auto-connect when manually disconnecting
       };
 
       await updateArduinoSettings(newArduinoSettings);
@@ -154,6 +166,15 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.error("Failed to disconnect from Arduino:", error);
       throw error;
     }
+  };
+
+  // New function to enable/disable auto-connect without changing connection state
+  const enableAutoConnect = async (enabled: boolean) => {
+    const newArduinoSettings = {
+      ...laserConfig.arduinoSettings,
+      autoConnectEnabled: enabled,
+    };
+    await updateArduinoSettings(newArduinoSettings);
   };
 
   const addLaser = async () => {
@@ -207,6 +228,32 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
     await saveConfig(newConfig);
   };
 
+  const addHighscore = async (highscoreData: Omit<Highscore, "id" | "date">) => {
+    const newHighscore: Highscore = {
+      ...highscoreData,
+      id: `${Date.now()}`,
+      date: new Date().toISOString(),
+    };
+
+    const newConfig = {
+      ...laserConfig,
+      highscores: [...laserConfig.highscores, newHighscore],
+    };
+
+    setLaserConfig(newConfig);
+    await saveConfig(newConfig);
+  };
+
+  const deleteAllHighscores = async () => {
+    const newConfig = {
+      ...laserConfig,
+      highscores: [],
+    };
+
+    setLaserConfig(newConfig);
+    await saveConfig(newConfig);
+  };
+
   return (
     <LaserConfigContext.Provider
       value={{
@@ -218,9 +265,12 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updateSoundSettings,
         connectArduino,
         disconnectArduino,
+        enableAutoConnect,
         addLaser,
         removeLaser,
         reorderLasers,
+        addHighscore,
+        deleteAllHighscores,
         isLoading,
       }}
     >

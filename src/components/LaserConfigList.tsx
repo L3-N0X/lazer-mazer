@@ -166,7 +166,8 @@ export const LaserConfigList: React.FC = () => {
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Each laser is mapped to a specific sensor index from the Arduino. The "Sensor #" label shows
-        which sensor value this laser is using.
+        which sensor value this laser is using. (Serial message order is used, first sensor value is
+        sensor #1)
       </Typography>
 
       <DndContext

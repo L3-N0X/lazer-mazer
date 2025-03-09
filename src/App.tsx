@@ -6,10 +6,12 @@ import About from "./pages/About";
 import Settings from "./pages/Settings";
 import Debug from "./pages/Debug";
 import Game from "./pages/Game";
+import Highscores from "./pages/Highscores";
 import Navbar from "./components/Navbar";
+import { invoke } from "@tauri-apps/api/core";
 import { LaserConfigProvider, useLaserConfig } from "./context/LaserConfigContext";
 import "./App.css";
-import { Snackbar, Alert, Button } from "@mui/material";
+import { Snackbar, Alert, Button, Box } from "@mui/material";
 
 // Create a theme with Roboto font
 const theme = createTheme({
@@ -37,18 +39,59 @@ const theme = createTheme({
 
 // Component that handles Arduino auto-connection
 const ArduinoAutoConnect = () => {
-  const { laserConfig, connectArduino } = useLaserConfig();
+  const { laserConfig, connectArduino, enableAutoConnect } = useLaserConfig();
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showError, setShowError] = useState(false);
   const connectionAttemptedRef = useRef(false);
   const retryTimeoutRef = useRef<number | null>(null);
+  const [portAvailableInList, setPortAvailableInList] = useState<boolean | null>(null);
+
+  // Function to check if configured port is in available ports list
+  const checkPortAvailability = async (configPort: string) => {
+    try {
+      if (!configPort) return false;
+
+      const availablePorts = await invoke<string[]>("list_ports");
+      const isAvailable = availablePorts.includes(configPort);
+      setPortAvailableInList(isAvailable);
+      return isAvailable;
+    } catch (error) {
+      console.error("Error checking port availability:", error);
+      return false;
+    }
+  };
 
   // Function to attempt connection with the Arduino
   const attemptConnection = async () => {
-    const { port, baudRate } = laserConfig.arduinoSettings;
+    const { port, baudRate, autoConnectEnabled } = laserConfig.arduinoSettings;
 
-    // Only try to connect if we have port and baud rate, and we're not already connected
-    if (port && baudRate && !laserConfig.arduinoSettings.isConnected) {
+    // Don't try to connect if auto-connect is disabled or already connected
+    if (!autoConnectEnabled || laserConfig.arduinoSettings.isConnected) {
+      return;
+    }
+
+    if (port && baudRate) {
+      // Check if the port is in the available list
+      const portAvailable = await checkPortAvailability(port);
+
+      if (!portAvailable) {
+        setConnectionError(`Port ${port} is not available for connection`);
+        setShowError(true);
+
+        // Schedule a retry after a delay
+        if (retryTimeoutRef.current) {
+          window.clearTimeout(retryTimeoutRef.current);
+        }
+        retryTimeoutRef.current = window.setTimeout(() => {
+          if (laserConfig.arduinoSettings.autoConnectEnabled) {
+            console.log("Retrying Arduino connection...");
+            attemptConnection();
+          }
+        }, 5000); // Retry after 5 seconds
+
+        return;
+      }
+
       try {
         console.log(`Attempting to connect to Arduino at ${port} with baud rate ${baudRate}...`);
         connectionAttemptedRef.current = true;
@@ -65,14 +108,16 @@ const ArduinoAutoConnect = () => {
         setConnectionError(`Failed to connect to Arduino: ${err.message || String(err)}`);
         setShowError(true);
 
-        // Schedule a retry after a delay
+        // Schedule a retry after a delay only if auto-connect is still enabled
         if (retryTimeoutRef.current) {
           window.clearTimeout(retryTimeoutRef.current);
         }
         retryTimeoutRef.current = window.setTimeout(() => {
-          console.log("Retrying Arduino connection...");
-          attemptConnection();
-        }, 3000); // Retry after 3 seconds
+          if (laserConfig.arduinoSettings.autoConnectEnabled) {
+            console.log("Retrying Arduino connection...");
+            attemptConnection();
+          }
+        }, 5000); // Retry after 5 seconds
       }
     } else if (laserConfig.arduinoSettings.isConnected) {
       console.log("Arduino is already connected, no need to reconnect");
@@ -84,11 +129,11 @@ const ArduinoAutoConnect = () => {
   // Run on initial mount and when Arduino settings change
   useEffect(() => {
     // Check for valid settings before attempting connection
-    const { port, baudRate } = laserConfig.arduinoSettings;
+    const { port, baudRate, autoConnectEnabled } = laserConfig.arduinoSettings;
     const validSettings = port && baudRate && port.trim() !== "";
 
-    // Skip if already connected
-    if (laserConfig.arduinoSettings.isConnected) {
+    // Skip if already connected or auto-connect disabled
+    if (laserConfig.arduinoSettings.isConnected || !autoConnectEnabled) {
       return;
     }
 
@@ -107,6 +152,7 @@ const ArduinoAutoConnect = () => {
     laserConfig.arduinoSettings.port,
     laserConfig.arduinoSettings.baudRate,
     laserConfig.arduinoSettings.isConnected,
+    laserConfig.arduinoSettings.autoConnectEnabled, // Added this to respond to auto-connect toggling
   ]);
 
   // Listen for config changes that might indicate a need to retry connection
@@ -116,22 +162,42 @@ const ArduinoAutoConnect = () => {
     if (
       validSettings &&
       !laserConfig.arduinoSettings.isConnected &&
-      connectionAttemptedRef.current
+      laserConfig.arduinoSettings.autoConnectEnabled
     ) {
       // This will catch any settings changes that might allow connection
       console.log("Arduino settings changed, retrying connection...");
       attemptConnection();
     }
-  }, [laserConfig]);
+  }, [laserConfig.arduinoSettings]);
 
   const handleCloseError = () => {
     setShowError(false);
   };
 
+  const handleRetryConnection = () => {
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+    }
+    attemptConnection();
+  };
+
+  const handleEnableAutoConnect = async () => {
+    await enableAutoConnect(true);
+    attemptConnection(); // Try connection immediately when re-enabled
+  };
+
+  // Determine error message type
+  const getErrorMessage = () => {
+    if (!portAvailableInList && laserConfig.arduinoSettings.port) {
+      return `Port ${laserConfig.arduinoSettings.port} is not available. Please check your Arduino connection.`;
+    }
+    return connectionError || "Connection error";
+  };
+
   return (
     <Snackbar
       open={showError}
-      autoHideDuration={6000}
+      autoHideDuration={10000}
       onClose={handleCloseError}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
     >
@@ -140,12 +206,19 @@ const ArduinoAutoConnect = () => {
         severity="error"
         sx={{ width: "100%" }}
         action={
-          <Button color="inherit" size="small" onClick={attemptConnection}>
-            Retry
-          </Button>
+          <Box sx={{ display: "flex" }}>
+            {!laserConfig.arduinoSettings.autoConnectEnabled && (
+              <Button color="inherit" size="small" onClick={handleEnableAutoConnect} sx={{ mr: 1 }}>
+                Enable Auto-Connect
+              </Button>
+            )}
+            <Button color="inherit" size="small" onClick={handleRetryConnection}>
+              Retry Now
+            </Button>
+          </Box>
         }
       >
-        {connectionError}
+        {getErrorMessage()}
       </Alert>
     </Snackbar>
   );
@@ -167,6 +240,7 @@ function App() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/debug" element={<Debug />} />
                 <Route path="/game" element={<Game />} />
+                <Route path="/highscores" element={<Highscores />} /> {/* Add this line */}
               </Routes>
             </main>
           </div>

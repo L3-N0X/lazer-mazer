@@ -23,10 +23,10 @@ export class AudioManager {
     try {
       // In Tauri, assets should be accessed relative to the public directory
       // Try multiple formats for better browser compatibility
-      this.loadSoundEffect(SoundEffect.GameStart, ["./assets/audio/game-start.wav"]);
-      this.loadSoundEffect(SoundEffect.GameOver, ["./assets/audio/game-over.wav"]);
-      this.loadSoundEffect(SoundEffect.LaserBroken, ["./assets/audio/laser-broken.wav"]);
-      this.loadSoundEffect(SoundEffect.Buzzer, ["./assets/audio/game-finished.wav"]);
+      this.loadSoundEffect(SoundEffect.GameStart, ["./assets/audio/game_start.wav"]);
+      this.loadSoundEffect(SoundEffect.GameOver, ["./assets/audio/game_over.wav"]);
+      this.loadSoundEffect(SoundEffect.LaserBroken, ["./assets/audio/laser_broken.wav"]);
+      this.loadSoundEffect(SoundEffect.Buzzer, ["./assets/audio/game_finished.wav"]);
 
       // Set up background music with multiple format options
       this.backgroundMusic = new Audio();

@@ -13,6 +13,8 @@ import {
   CircularProgress,
   Stack,
   Chip,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -23,11 +25,14 @@ import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import SyncIcon from "@mui/icons-material/Sync";
 
 export const ArduinoSettings: React.FC = () => {
-  const { laserConfig, connectArduino, disconnectArduino } = useLaserConfig();
+  const { laserConfig, connectArduino, disconnectArduino, enableAutoConnect } = useLaserConfig();
   const [availablePorts, setAvailablePorts] = useState<string[]>([]);
   const [selectedPort, setSelectedPort] = useState<string>(laserConfig.arduinoSettings.port);
   const [baudRate, setBaudRate] = useState<number>(laserConfig.arduinoSettings.baudRate);
   const [isConnected, setIsConnected] = useState<boolean>(laserConfig.arduinoSettings.isConnected);
+  const [autoConnectEnabled, setAutoConnectEnabled] = useState<boolean>(
+    laserConfig.arduinoSettings.autoConnectEnabled !== false // Default to true if undefined
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [serialData, setSerialData] = useState<number[]>([]);
@@ -70,6 +75,7 @@ export const ArduinoSettings: React.FC = () => {
     setSelectedPort(laserConfig.arduinoSettings.port);
     setBaudRate(laserConfig.arduinoSettings.baudRate);
     setIsConnected(laserConfig.arduinoSettings.isConnected);
+    setAutoConnectEnabled(laserConfig.arduinoSettings.autoConnectEnabled !== false);
 
     if (laserConfig.arduinoSettings.isConnected) {
       setAutoConnectAttempted(true);
@@ -124,6 +130,12 @@ export const ArduinoSettings: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAutoConnectToggle = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = event.target.checked;
+    setAutoConnectEnabled(newValue);
+    await enableAutoConnect(newValue);
   };
 
   return (
@@ -188,6 +200,17 @@ export const ArduinoSettings: React.FC = () => {
               ))}
             </Select>
           </FormControl>
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={autoConnectEnabled}
+                onChange={handleAutoConnectToggle}
+                color="primary"
+              />
+            }
+            label="Auto-connect on startup"
+          />
 
           <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
             <Button

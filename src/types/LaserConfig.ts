@@ -17,6 +17,7 @@ export interface ArduinoSettings {
   port: string;
   baudRate: number;
   isConnected: boolean;
+  autoConnectEnabled?: boolean; // New property to track if auto-connect is enabled
 }
 
 export interface SoundSettings {
@@ -26,11 +27,23 @@ export interface SoundSettings {
   effectsSound: boolean;
 }
 
+export interface Highscore {
+  id: string;
+  name: string;
+  time: number; // Time in milliseconds
+  date: string; // ISO date string
+  touchedLasers: number;
+  maxAllowedTouches: number;
+  reactivationEnabled: boolean;
+  reactivationTimeSeconds: number;
+}
+
 export interface LaserConfigState {
   lasers: LaserConfig[];
   gameSettings: GameSettings;
   arduinoSettings: ArduinoSettings;
   soundSettings: SoundSettings;
+  highscores: Highscore[];
 }
 
 export const defaultLaserConfig: LaserConfigState = {
@@ -48,11 +61,13 @@ export const defaultLaserConfig: LaserConfigState = {
     port: "",
     baudRate: 9600,
     isConnected: false,
+    autoConnectEnabled: true, // Default to enabled
   },
   soundSettings: {
-    masterVolume: 70,
+    masterVolume: 20,
     effectVolume: 70,
     ambientSound: true,
     effectsSound: true,
   },
+  highscores: [],
 };

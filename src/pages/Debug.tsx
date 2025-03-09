@@ -214,7 +214,7 @@ const Debug: React.FC = () => {
                   <Box key={index} sx={{ mb: 1 }}>
                     <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
                       <Chip
-                        label={`Sensor #${index}`}
+                        label={`Sensor #${index + 1}`}
                         size="small"
                         color={isUsed ? "default" : "default"}
                         variant={isUsed ? "filled" : "outlined"}
@@ -346,12 +346,17 @@ const Debug: React.FC = () => {
                       subheader={
                         <Box sx={{ display: "flex", alignItems: "center", mt: 0.5 }}>
                           <Chip
-                            label={`Sensor #${laser.sensorIndex}`}
+                            label={`Sensor #${laser.sensorIndex + 1}`}
                             size="small"
                             color="default"
                             sx={{ mr: 1 }}
                           />
-                          {laser.enabled ? "(Enabled)" : "(Disabled)"}
+                          <Chip
+                            label={laser.enabled ? "Enabled" : "Disabled"}
+                            size="small"
+                            color={laser.enabled ? "success" : "error"}
+                            sx={{ ml: "auto" }}
+                          />
                         </Box>
                       }
                       sx={{ pb: 0 }}

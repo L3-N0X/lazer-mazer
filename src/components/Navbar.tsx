@@ -32,14 +32,17 @@ const Navbar = () => {
           </Typography>
         </Box>
         <Box sx={{ display: "flex", gap: 2 }}>
-          <Button color="inherit" component={RouterLink} to="/about">
-            About
+          <Button color="inherit" component={RouterLink} to="/game">
+            GAME
+          </Button>
+          <Button color="inherit" component={RouterLink} to="/highscores">
+            HIGHSCORES
           </Button>
           <Button color="inherit" component={RouterLink} to="/debug">
             DEBUG
           </Button>
-          <Button color="inherit" component={RouterLink} to="/game">
-            GAME
+          <Button color="inherit" component={RouterLink} to="/about">
+            About
           </Button>
           <IconButton
             edge="end"

@@ -101,7 +101,6 @@ fn configure_serial(
                         let _ = app_handle_clone.emit("buzzer", true);
                     } else if trimmed == "start" {
                         let _ = app_handle_clone.emit("start-button", true);
-                        continue;
                     } else {
                         // Parse comma separated values into integers
                         let values: Result<Vec<u16>, _> =

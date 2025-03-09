@@ -91,7 +91,7 @@ export const LaserConfigItem: React.FC<LaserConfigItemProps> = ({
           />
 
           <Chip
-            label={`Sensor #${laser.sensorIndex}`}
+            label={`Sensor #${laser.sensorIndex + 1}`}
             color="primary"
             size="small"
             sx={{ alignSelf: "center" }}
