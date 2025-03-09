@@ -50,6 +50,7 @@ jobs:
       - name: install frontend dependencies
         run: |
           npm install -g pnpm
+          pnpm setup
           pnpm install
           pnpm install -g @tauri-apps/cli
 
