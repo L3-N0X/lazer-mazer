@@ -58,7 +58,7 @@ const Home: React.FC = () => {
           gutterBottom
           sx={{ mb: 4, maxWidth: "600px", textAlign: "center" }}
         >
-          Create and navigate through an exciting laser maze challenge
+          Steuerung für das Laser-Maze-Spiel
         </Typography>
 
         <Button

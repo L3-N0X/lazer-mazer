@@ -73,6 +73,8 @@ export const ArduinoSettings: React.FC = () => {
 
     if (laserConfig.arduinoSettings.isConnected) {
       setAutoConnectAttempted(true);
+      // Clear any previous error when connected successfully
+      setError(null);
     }
   }, [laserConfig.arduinoSettings]);
 
