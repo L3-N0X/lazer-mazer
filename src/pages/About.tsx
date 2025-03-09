@@ -20,6 +20,13 @@ const About: React.FC = () => {
   return (
     <Container maxWidth="lg" className="about-page">
       <Paper elevation={3} sx={{ p: 4, mt: 2, borderRadius: 2, bgcolor: "background.paper" }}>
+        <img
+          src="/LM-only.svg"
+          alt="logo"
+          width={200}
+          height={200}
+          style={{ display: "block", margin: "auto" }}
+        />
         <Typography variant="h3" component="h1" gutterBottom color="primary" fontWeight="500">
           About lazer-mazer
         </Typography>

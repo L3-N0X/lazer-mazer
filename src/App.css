@@ -15,6 +15,9 @@
   --color-hover: #ff6b6b; /* Brighter red on hover */
   --color-button: #1e1e1e; /* Slightly lighter for inputs/buttons */
   --color-border: transparent;
+
+  /* scrollbar dark */
+  scrollbar-color: #333333 #121212;
 }
 
 body {

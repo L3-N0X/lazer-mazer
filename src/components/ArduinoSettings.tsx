@@ -20,6 +20,7 @@ import { useLaserConfig } from "../context/LaserConfigContext";
 import UsbIcon from "@mui/icons-material/Usb";
 import PowerIcon from "@mui/icons-material/Power";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import SyncIcon from "@mui/icons-material/Sync";
 
 export const ArduinoSettings: React.FC = () => {
   const { laserConfig, connectArduino, disconnectArduino } = useLaserConfig();
@@ -31,6 +32,7 @@ export const ArduinoSettings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [serialData, setSerialData] = useState<number[]>([]);
   const [buzzerTriggered, setBuzzerTriggered] = useState<boolean>(false);
+  const [autoConnectAttempted, setAutoConnectAttempted] = useState<boolean>(false);
 
   // Common baud rates
   const baudRates = [9600, 19200, 38400, 57600, 115200];
@@ -68,6 +70,10 @@ export const ArduinoSettings: React.FC = () => {
     setSelectedPort(laserConfig.arduinoSettings.port);
     setBaudRate(laserConfig.arduinoSettings.baudRate);
     setIsConnected(laserConfig.arduinoSettings.isConnected);
+
+    if (laserConfig.arduinoSettings.isConnected) {
+      setAutoConnectAttempted(true);
+    }
   }, [laserConfig.arduinoSettings]);
 
   // Convert the array to a readable string format
@@ -129,6 +135,12 @@ export const ArduinoSettings: React.FC = () => {
       {buzzerTriggered && (
         <Alert severity="warning" sx={{ mb: 2 }} icon={<NotificationsActiveIcon />}>
           Buzzer triggered!
+        </Alert>
+      )}
+
+      {autoConnectAttempted && isConnected && (
+        <Alert severity="success" sx={{ mb: 2 }} icon={<SyncIcon />}>
+          Auto-connected to Arduino on {selectedPort} at {baudRate} baud.
         </Alert>
       )}
 

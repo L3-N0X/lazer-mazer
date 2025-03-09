@@ -16,8 +16,8 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { useLaserConfig } from "../context/LaserConfigContext";
+import { audioManager, SoundEffect } from "../audioManager";
 
 // Custom styled components for the game screen
 const TimerDisplay = styled(Typography)(({ theme }) => ({
@@ -84,7 +84,6 @@ const Game: React.FC = () => {
   const [gameTime, setGameTime] = useState(0);
   const [laserStates, setLaserStates] = useState<{ [id: string]: boolean }>({});
   const [triggeredCount, setTriggeredCount] = useState(0);
-  const [triggeredLasers, setTriggeredLasers] = useState<Set<string>>(new Set());
   const [gameOver, setGameOver] = useState(false);
   const [gameSuccess, setGameSuccess] = useState(false);
 
@@ -115,43 +114,10 @@ const Game: React.FC = () => {
     setLaserStates(initialStates);
   }, [laserConfig.lasers]);
 
-  // Send laser sensitivities to the backend
-  useEffect(() => {
-    const updateBackendSensitivities = async () => {
-      try {
-        const sensitivities = laserConfig.lasers.map((laser) => Math.round(laser.sensitivity));
-        await invoke("update_laser_sensitivities", { sensitivities });
-      } catch (error) {
-        console.error("Failed to update laser sensitivities:", error);
-      }
-    };
-
-    updateBackendSensitivities();
-  }, [laserConfig.lasers]);
-
-  // Update audio settings when they change
-  useEffect(() => {
-    const updateAudioSettings = async () => {
-      try {
-        await invoke("update_audio_settings", {
-          masterVolume: laserConfig.soundSettings.masterVolume,
-          effectVolume: laserConfig.soundSettings.effectVolume,
-          ambientEnabled: laserConfig.soundSettings.ambientSound,
-          effectsEnabled: laserConfig.soundSettings.effectsSound,
-        });
-      } catch (error) {
-        console.error("Failed to update audio settings:", error);
-      }
-    };
-
-    updateAudioSettings();
-  }, [laserConfig.soundSettings]);
-
   // Clean up audio when component unmounts
   useEffect(() => {
     return () => {
-      // Stop all audio when component unmounts
-      invoke("stop_all_audio").catch(console.error);
+      audioManager.stopAllAudio();
     };
   }, []);
 
@@ -227,10 +193,10 @@ const Game: React.FC = () => {
 
   // Handle buzzer pressed - buzzer is already played in the backend
   const handleBuzzerPressed = async () => {
-    // Just stop the game - audio is handled in backend
     await stopGame();
     setGameOver(true);
     setGameSuccess(false); // Buzzer press means failure
+    audioManager.playEffect(SoundEffect.Buzzer);
   };
 
   // Handle laser triggered
@@ -238,16 +204,12 @@ const Game: React.FC = () => {
     // Only process if game is running
     if (!isGameRunning) return;
 
+    // Play laser broken sound effect
+    audioManager.playEffect(SoundEffect.LaserBroken);
+
     // Update triggered count
     const newTriggeredCount = triggeredCount + 1;
     setTriggeredCount(newTriggeredCount);
-
-    // Add to triggered lasers set to keep track for the whole game session
-    setTriggeredLasers((prevSet) => {
-      const newSet = new Set(prevSet);
-      newSet.add(laserId);
-      return newSet;
-    });
 
     // Set the laser to triggered state (gray)
     setLaserStates((prevStates) => ({
@@ -271,9 +233,6 @@ const Game: React.FC = () => {
         const laser = laserConfig.lasers.find((l) => l.id === laserId);
         if (laser) {
           try {
-            // Notify backend to reactivate this laser
-            await invoke("reactivate_laser", { sensorIndex: laser.sensorIndex });
-
             // Update UI
             setLaserStates((prevStates) => ({
               ...prevStates,
@@ -302,26 +261,17 @@ const Game: React.FC = () => {
 
   // Handle game over
   const handleGameOver = async () => {
-    try {
-      // Play game over sound and stop the game
-      await invoke("game_over");
-      setIsGameRunning(false);
-      setGameOver(true);
-      setGameSuccess(false); // Game over means failure
-    } catch (error) {
-      console.error("Failed to handle game over:", error);
-      // Fallback to simple game stop if the game_over command fails
-      await stopGame();
-      setGameOver(true);
-      setGameSuccess(false);
-    }
+    audioManager.playEffect(SoundEffect.GameOver);
+    audioManager.stopBackgroundMusic();
+    setIsGameRunning(false);
+    setGameOver(true);
+    setGameSuccess(false); // Game over means failure
   };
 
   const startGame = async () => {
     // Reset all game state
     setGameTime(0);
     setTriggeredCount(0);
-    setTriggeredLasers(new Set());
     setGameOver(false);
     setGameSuccess(false);
 
@@ -334,38 +284,24 @@ const Game: React.FC = () => {
     });
     setLaserStates(initialStates);
 
-    // Update laser sensitivities
-    try {
-      const sensitivities = laserConfig.lasers.map((laser) => Math.round(laser.sensitivity));
-      await invoke("update_laser_sensitivities", { sensitivities });
-    } catch (error) {
-      console.error("Failed to update laser sensitivities:", error);
-    }
+    // Play start sound and begin background music
+    audioManager.playEffect(SoundEffect.GameStart);
+    audioManager.startBackgroundMusic();
 
-    // Start the game on backend - this also plays the start sound
-    try {
-      await invoke("start_game");
-      setIsGameRunning(true);
-    } catch (error) {
-      console.error("Failed to start game:", error);
-    }
+    setIsGameRunning(true);
   };
 
   const stopGame = async () => {
+    // Always play finish sound when button is clicked
+    audioManager.playEffect(SoundEffect.Buzzer);
+
     // Don't show success if game was never running
     if (isGameRunning) {
       setGameOver(true);
       setGameSuccess(true); // Manual stop means success!
     }
 
-    // Stop the game on backend - this also stops background music
-    try {
-      await invoke("stop_game");
-    } catch (error) {
-      console.error("Failed to stop game:", error);
-    }
-
-    // Stop the game locally
+    audioManager.stopBackgroundMusic();
     setIsGameRunning(false);
 
     // Clear all reactivation timeouts
@@ -376,18 +312,12 @@ const Game: React.FC = () => {
   };
 
   const resetGame = async () => {
-    // Stop the game without showing success message
-    try {
-      await invoke("stop_game");
-    } catch (error) {
-      console.error("Failed to stop game:", error);
-    }
+    audioManager.stopAllAudio();
 
     // Reset all game state
     setIsGameRunning(false);
     setGameTime(0);
     setTriggeredCount(0);
-    setTriggeredLasers(new Set());
     setGameOver(false);
     setGameSuccess(false);
 
@@ -559,27 +489,31 @@ const Game: React.FC = () => {
               fontSize: { xs: "3rem", sm: "4rem" },
             }}
           >
-            {gameSuccess ? "MISSION COMPLETE!" : "GAME OVER"}
+            {gameSuccess ? "GESCHAFFT!" : "GAME OVER"}
           </Typography>
           <Typography variant="h4" color="white" sx={{ mb: 4, textAlign: "center" }}>
             {gameSuccess
-              ? "Congratulations! You made it through!"
-              : "You triggered too many lasers!"}
+              ? "Glückwunsch! Du hast es geschafft!"
+              : "Du hast es leider nicht geschafft. Versuche es erneut!"}
           </Typography>
           <Typography variant="h5" color="white" sx={{ mb: 2 }}>
-            Final Time: {formatTime(gameTime)}
+            Deine Zeit:
+          </Typography>
+          <Typography variant="h3" color="white" sx={{ mb: 4 }}>
+            {formatTime(gameTime)}
           </Typography>
           <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
             <Button
               variant="contained"
               color="primary"
+              size="large"
               onClick={resetGame}
               startIcon={<RestartAltIcon />}
             >
-              Reset
+              Neues Spiel
             </Button>
-            <Button variant="outlined" color="error" onClick={handleCloseGameOver}>
-              Close
+            <Button variant="outlined" size="large" color="error" onClick={handleCloseGameOver}>
+              Schließen
             </Button>
           </Box>
         </GameOverContent>

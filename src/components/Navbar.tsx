@@ -1,26 +1,36 @@
 import { AppBar, Toolbar, Typography, Button, IconButton, Box } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import SettingsIcon from "@mui/icons-material/Settings";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 
 const Navbar = () => {
   return (
     <AppBar position="static">
       <Toolbar>
-        <Typography
-          variant="h6"
+        <Box
           component={RouterLink}
           to="/"
           sx={{
-            flexGrow: 1,
+            display: "flex",
+            alignItems: "center",
             textDecoration: "none",
             color: "inherit",
-            fontWeight: "bold",
+            flexGrow: 1,
           }}
         >
-          lazer-mazer
-        </Typography>
-
+          <img src="/LM-only.svg" alt="logo" width={50} height={50} />
+          <Box sx={{ width: 16 }} />
+          <Typography
+            variant="h6"
+            sx={{
+              flexGrow: 1,
+              textDecoration: "none",
+              color: "inherit",
+              fontWeight: "bold",
+            }}
+          >
+            lazer-mazer
+          </Typography>
+        </Box>
         <Box sx={{ display: "flex", gap: 2 }}>
           <Button color="inherit" component={RouterLink} to="/about">
             About

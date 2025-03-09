@@ -1,14 +1,9 @@
-use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use tauri_plugin_store::StoreExt;
-
-// Add the audio module
-mod audio;
-use audio::{AudioManager, SoundEffect};
 
 // Store parsed sensor values for use across the application
 #[derive(Clone, serde::Serialize)]
@@ -23,54 +18,6 @@ impl SensorData {
 
     fn update(&mut self, new_values: Vec<u16>) {
         self.values = new_values;
-    }
-}
-
-// Track game state including triggered lasers
-struct GameState {
-    is_active: bool,
-    triggered_lasers: HashSet<usize>, // Track which sensor indices have triggered
-    laser_sensitivities: Vec<u16>,    // Store sensitivity thresholds for each laser
-}
-
-impl GameState {
-    fn new() -> Self {
-        Self {
-            is_active: false,
-            triggered_lasers: HashSet::new(),
-            laser_sensitivities: Vec::new(),
-        }
-    }
-
-    fn start_game(&mut self) {
-        self.is_active = true;
-    }
-
-    fn stop_game(&mut self) {
-        self.is_active = false;
-    }
-
-    fn reset_triggers(&mut self) {
-        self.triggered_lasers.clear();
-    }
-
-    fn reactivate_laser(&mut self, sensor_index: usize) {
-        self.triggered_lasers.remove(&sensor_index);
-    }
-
-    fn update_sensitivities(&mut self, sensitivities: Vec<u16>) {
-        self.laser_sensitivities = sensitivities;
-    }
-
-    fn is_laser_triggered(&self, sensor_index: usize, value: u16) -> bool {
-        if sensor_index >= self.laser_sensitivities.len() {
-            return false;
-        }
-
-        let threshold = self.laser_sensitivities[sensor_index];
-        // Check if value is below threshold (beam broken)
-        let normalized_value = (value as f32 / 1023.0) * 100.0;
-        normalized_value < threshold as f32
     }
 }
 
@@ -107,120 +54,6 @@ fn list_ports() -> Result<Vec<String>, String> {
         .map(|ports| ports.into_iter().map(|p| p.port_name).collect())
 }
 
-// Command to start a new game and reset audio triggers
-#[tauri::command]
-fn start_game(
-    game_state: tauri::State<Arc<Mutex<GameState>>>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    // Update game state
-    let mut state = game_state.lock().map_err(|e| e.to_string())?;
-    state.start_game();
-    state.reset_triggers();
-
-    // Play game start sound and start background music
-    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
-
-    // Use a single mutable lock for both operations
-    if let Ok(mut manager) = audio_manager.inner().lock() {
-        println!("Playing game start effect and starting background music");
-        let _ = manager.play_effect(SoundEffect::GameStart);
-        let _ = manager.start_background_music();
-    } else {
-        println!("Failed to lock audio manager for game start");
-    }
-
-    Ok(())
-}
-
-// Command to stop the current game
-#[tauri::command]
-fn stop_game(
-    game_state: tauri::State<Arc<Mutex<GameState>>>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let mut state = game_state.lock().map_err(|e| e.to_string())?;
-    state.stop_game();
-
-    // Stop background music
-    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
-    if let Ok(manager) = audio_manager.lock() {
-        manager.toggle_music(false);
-    }
-    Ok(())
-}
-
-// Command to stop all audio playback
-#[tauri::command]
-fn stop_all_audio(app_handle: tauri::AppHandle) -> Result<(), String> {
-    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
-    if let Ok(manager) = audio_manager.lock() {
-        manager.stop_all();
-    }
-    Ok(())
-}
-
-// Command for game over
-#[tauri::command]
-fn game_over(app_handle: tauri::AppHandle) -> Result<(), String> {
-    // Play game over sound
-    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
-    if let Ok(manager) = audio_manager.lock() {
-        manager.play_effect(SoundEffect::GameOver).ok();
-    }
-    // Stop the game and background music
-    let game_state = app_handle.state::<Arc<Mutex<GameState>>>();
-    stop_game(game_state, app_handle.clone()).ok();
-
-    Ok(())
-}
-
-// Command to reactivate a specific laser
-#[tauri::command]
-fn reactivate_laser(
-    sensor_index: usize,
-    game_state: tauri::State<Arc<Mutex<GameState>>>,
-) -> Result<(), String> {
-    let mut state = game_state.lock().map_err(|e| e.to_string())?;
-    state.reactivate_laser(sensor_index);
-    Ok(())
-}
-
-// Command to update laser sensitivities from frontend
-#[tauri::command]
-fn update_laser_sensitivities(
-    sensitivities: Vec<u16>,
-    game_state: tauri::State<Arc<Mutex<GameState>>>,
-) -> Result<(), String> {
-    let mut state = game_state.lock().map_err(|e| e.to_string())?;
-    state.update_sensitivities(sensitivities);
-    Ok(())
-}
-
-// Command to update audio settings
-#[tauri::command]
-fn update_audio_settings(
-    master_volume: f32,
-    effect_volume: f32,
-    ambient_enabled: bool,
-    effects_enabled: bool,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let audio_manager = app_handle.state::<Arc<Mutex<AudioManager>>>();
-    {
-        if let Ok(mut manager) = audio_manager.lock() {
-            manager.update_settings(
-                master_volume,
-                effect_volume,
-                ambient_enabled,
-                effects_enabled,
-            );
-            return Ok(());
-        }
-    }
-    Err("Failed to lock audio manager".to_string())
-}
-
 // Command to configure and start reading from a serial port.
 #[tauri::command]
 fn configure_serial(
@@ -229,8 +62,6 @@ fn configure_serial(
     app_handle: tauri::AppHandle,
     state: tauri::State<Arc<Mutex<SerialManager>>>,
     sensor_data: tauri::State<Arc<Mutex<SensorData>>>,
-    game_state: tauri::State<Arc<Mutex<GameState>>>,
-    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
 ) -> Result<(), String> {
     // Lock our SerialManager state.
     let mut manager = state.lock().map_err(|e| e.to_string())?;
@@ -248,9 +79,9 @@ fn configure_serial(
 
     // Clone the app handle so the thread can emit events.
     let app_handle_clone = app_handle.clone();
-    let sensor_data_clone = Arc::clone(&sensor_data);
-    let game_state_clone = Arc::clone(&game_state);
-    let audio_manager_clone = Arc::clone(&audio_manager);
+
+    // Properly clone the inner Arc for each state
+    let sensor_data_clone = Arc::clone(sensor_data.inner());
 
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(serial_port);
@@ -268,16 +99,6 @@ fn configure_serial(
                     // Special case for "buzzer" message
                     if trimmed == "buzzer" {
                         let _ = app_handle_clone.emit("buzzer", true);
-
-                        // Play buzzer sound if game is active
-                        if let Ok(game_state) = game_state_clone.lock() {
-                            if game_state.is_active {
-                                if let Ok(audio_manager) = audio_manager_clone.lock() {
-                                    let manager = audio_manager;
-                                    let _ = manager.play_effect(SoundEffect::Buzzer);
-                                }
-                            }
-                        }
                     } else if trimmed == "start" {
                         let _ = app_handle_clone.emit("start-button", true);
                         continue;
@@ -290,32 +111,6 @@ fn configure_serial(
                             // Update shared sensor data
                             if let Ok(mut sensor_state) = sensor_data_clone.lock() {
                                 sensor_state.update(parsed_values.clone());
-                            }
-
-                            // Process values for audio triggers if game is active
-                            if let Ok(mut game_state) = game_state_clone.lock() {
-                                if game_state.is_active {
-                                    // Check each laser value against its threshold
-                                    for (index, &value) in parsed_values.iter().enumerate() {
-                                        // If laser is triggered and hasn't played sound yet
-                                        if game_state.is_laser_triggered(index, value)
-                                            && !game_state.triggered_lasers.contains(&index)
-                                        {
-                                            // Mark as triggered
-                                            game_state.triggered_lasers.insert(index);
-
-                                            // Play laser broken sound effect
-                                            if let Some(audio_manager) = app_handle_clone
-                                                .try_state::<Arc<Mutex<AudioManager>>>()
-                                            {
-                                                if let Ok(manager) = audio_manager.lock() {
-                                                    let _ = manager
-                                                        .play_effect(SoundEffect::LaserBroken);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                             }
 
                             // Emit formatted data
@@ -362,9 +157,6 @@ pub fn run() {
         // Manage the SerialManager and SensorData state
         .manage(Arc::new(Mutex::new(SerialManager::new())))
         .manage(Arc::new(Mutex::new(SensorData::new())))
-        // Add GameState and AudioManager to state
-        .manage(Arc::new(Mutex::new(GameState::new())))
-        .manage(AudioManager::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         // Register our Tauri commands.
@@ -372,18 +164,9 @@ pub fn run() {
             list_ports,
             configure_serial,
             stop_serial,
-            start_game,
-            stop_game,
-            game_over,
-            reactivate_laser,
-            update_laser_sensitivities,
-            update_audio_settings,
-            stop_all_audio,
         ])
         .setup(|app| {
             app.store("settings.json")?;
-            // We don't need to initialize the audio system anymore
-            // as it's handled in the AudioManager::new() method
             Ok(())
         })
         .run(tauri::generate_context!())

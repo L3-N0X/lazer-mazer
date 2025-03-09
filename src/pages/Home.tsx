@@ -36,6 +36,7 @@ const Home: React.FC = () => {
           py: 4,
         }}
       >
+        <img src="/LM-only.svg" alt="lazer-mazer logo" style={{ width: "200px", height: "auto" }} />
         <Typography
           variant="h1"
           component="h1"
