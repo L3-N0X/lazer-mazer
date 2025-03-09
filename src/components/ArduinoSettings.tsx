@@ -84,6 +84,28 @@ export const ArduinoSettings: React.FC = () => {
     }
   }, [laserConfig.arduinoSettings]);
 
+  // Add validation checks for actual connection status
+  useEffect(() => {
+    // If we're supposedly connected but have no data, check connection
+    if (isConnected && selectedPort) {
+      const checkConnection = async () => {
+        try {
+          // Try to ping the Arduino or similar basic operation
+          await invoke("check_connection");
+        } catch (err) {
+          // If check fails, we're not actually connected
+          console.warn("Disconnecting due to failed connection check:", err);
+          handleDisconnect();
+        }
+      };
+
+      // Only run this check once after connection is established
+      if (autoConnectAttempted && isConnected) {
+        checkConnection();
+      }
+    }
+  }, [isConnected, selectedPort, autoConnectAttempted]);
+
   // Convert the array to a readable string format
   const serialDataString = serialData.length > 0 ? serialData.join(", ") : "No data received yet";
 

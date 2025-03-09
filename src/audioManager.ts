@@ -38,9 +38,8 @@ export class AudioManager {
       }
 
       this.initialized = true;
-      console.log("Audio manager initialized");
     } catch (error) {
-      console.error("Error initializing audio manager:", error);
+      console.error("Failed to initialize audio manager:", error);
     }
   }
 
@@ -91,7 +90,6 @@ export class AudioManager {
             console.warn(`Error playing sound effect ${effect}:`, err);
           });
         }
-        console.log(`Playing sound effect: ${effect}`);
       } catch (err) {
         console.error(`Failed to play effect ${effect}:`, err);
       }
@@ -113,7 +111,6 @@ export class AudioManager {
           console.warn("Error playing background music:", err);
         });
       }
-      console.log("Background music started");
     } catch (err) {
       console.error("Failed to start background music:", err);
     }
@@ -125,7 +122,6 @@ export class AudioManager {
     try {
       this.backgroundMusic.pause();
       this.backgroundMusic.currentTime = 0;
-      console.log("Background music stopped");
     } catch (err) {
       console.error("Failed to stop background music:", err);
     }
@@ -141,10 +137,6 @@ export class AudioManager {
     this.effectVolume = effectVolume / 100;
     this.ambientEnabled = ambientEnabled;
     this.effectsEnabled = effectsEnabled;
-
-    console.log(
-      `Audio settings updated: Music: ${this.musicVolume}, Effects: ${this.effectVolume}`
-    );
 
     if (this.backgroundMusic) {
       try {

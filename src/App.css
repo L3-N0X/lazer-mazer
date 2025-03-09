@@ -100,7 +100,6 @@ button {
 
 /* Full viewport height container */
 .app-container {
-  overflow: hidden;
   height: 100vh;
   min-height: 100vh;
   display: flex;
@@ -109,5 +108,12 @@ button {
 
 main {
   flex: 1;
+  display: flex;
   overflow-y: auto;
+  position: relative;
+}
+
+/* Add this to ensure Snackbar alerts don't get cut off */
+.MuiSnackbar-root {
+  z-index: 1400;
 }

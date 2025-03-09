@@ -167,7 +167,9 @@ pub fn run() {
             stop_serial,
         ])
         .setup(|app| {
-            app.store("settings.json")?;
+            // set arduinoSettings.isConnected subfield to false on startup
+            app.store("laser-config.dat")?
+                .set("arduinoSettings.isConnected", false);
             Ok(())
         })
         .run(tauri::generate_context!())

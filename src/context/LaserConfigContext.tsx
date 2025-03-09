@@ -61,7 +61,18 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
             storedConfig.highscores = [];
           }
 
+          // Important: Reset Arduino connection state on application startup
+          // This ensures autoconnect works correctly after app restart
+          storedConfig.arduinoSettings = {
+            ...storedConfig.arduinoSettings,
+            isConnected: false, // Reset connection state on app start
+          };
+
           setLaserConfig(storedConfig);
+
+          // Save the updated config with reset connection state
+          await store.set("laserConfig", storedConfig);
+          await store.save();
         } else {
           // If no config is found, save the default config
           await store.set("laserConfig", defaultLaserConfig);

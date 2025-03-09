@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
 import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
 import { useState, useEffect, useRef } from "react";
 import Home from "./pages/Home";
@@ -40,11 +40,18 @@ const theme = createTheme({
 // Component that handles Arduino auto-connection
 const ArduinoAutoConnect = () => {
   const { laserConfig, connectArduino, enableAutoConnect } = useLaserConfig();
+  const navigate = useNavigate();
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showError, setShowError] = useState(false);
   const connectionAttemptedRef = useRef(false);
   const retryTimeoutRef = useRef<number | null>(null);
   const [portAvailableInList, setPortAvailableInList] = useState<boolean | null>(null);
+
+  // Function to navigate to settings page
+  const goToSettings = () => {
+    // open the specific settings page for Arduino
+    navigate("/settings");
+  };
 
   // Function to check if configured port is in available ports list
   const checkPortAvailability = async (configPort: string) => {
@@ -71,12 +78,14 @@ const ArduinoAutoConnect = () => {
     }
 
     if (port && baudRate) {
+      // Always show connection attempts in UI
+      setShowError(true);
+
       // Check if the port is in the available list
       const portAvailable = await checkPortAvailability(port);
 
       if (!portAvailable) {
         setConnectionError(`Port ${port} is not available for connection`);
-        setShowError(true);
 
         // Schedule a retry after a delay
         if (retryTimeoutRef.current) {
@@ -84,10 +93,9 @@ const ArduinoAutoConnect = () => {
         }
         retryTimeoutRef.current = window.setTimeout(() => {
           if (laserConfig.arduinoSettings.autoConnectEnabled) {
-            console.log("Retrying Arduino connection...");
             attemptConnection();
           }
-        }, 5000); // Retry after 5 seconds
+        }, 10000); // Retry after 10 seconds
 
         return;
       }
@@ -96,17 +104,13 @@ const ArduinoAutoConnect = () => {
         console.log(`Attempting to connect to Arduino at ${port} with baud rate ${baudRate}...`);
         connectionAttemptedRef.current = true;
         await connectArduino(port, baudRate);
-        console.log("Arduino connection successful");
 
-        // Clear any existing error when connection is successful
-        if (showError) {
-          setShowError(false);
-          setConnectionError(null);
-        }
+        // Clear error when connection is successful
+        setShowError(false);
+        setConnectionError(null);
       } catch (err: any) {
         console.error("Arduino connection failed:", err);
         setConnectionError(`Failed to connect to Arduino: ${err.message || String(err)}`);
-        setShowError(true);
 
         // Schedule a retry after a delay only if auto-connect is still enabled
         if (retryTimeoutRef.current) {
@@ -114,15 +118,10 @@ const ArduinoAutoConnect = () => {
         }
         retryTimeoutRef.current = window.setTimeout(() => {
           if (laserConfig.arduinoSettings.autoConnectEnabled) {
-            console.log("Retrying Arduino connection...");
             attemptConnection();
           }
         }, 5000); // Retry after 5 seconds
       }
-    } else if (laserConfig.arduinoSettings.isConnected) {
-      console.log("Arduino is already connected, no need to reconnect");
-    } else {
-      console.log("No Arduino settings available for connection");
     }
   };
 
@@ -164,8 +163,6 @@ const ArduinoAutoConnect = () => {
       !laserConfig.arduinoSettings.isConnected &&
       laserConfig.arduinoSettings.autoConnectEnabled
     ) {
-      // This will catch any settings changes that might allow connection
-      console.log("Arduino settings changed, retrying connection...");
       attemptConnection();
     }
   }, [laserConfig.arduinoSettings]);
@@ -197,7 +194,7 @@ const ArduinoAutoConnect = () => {
   return (
     <Snackbar
       open={showError}
-      autoHideDuration={10000}
+      autoHideDuration={null}
       onClose={handleCloseError}
       anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
     >
@@ -212,6 +209,9 @@ const ArduinoAutoConnect = () => {
                 Enable Auto-Connect
               </Button>
             )}
+            <Button color="inherit" size="small" onClick={goToSettings} sx={{ mr: 1 }}>
+              Open Settings
+            </Button>
             <Button color="inherit" size="small" onClick={handleRetryConnection}>
               Retry Now
             </Button>
@@ -224,6 +224,11 @@ const ArduinoAutoConnect = () => {
   );
 };
 
+// Wrapper component for ArduinoAutoConnect to access navigation
+function AutoConnectWithNavigation() {
+  return <ArduinoAutoConnect />;
+}
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -232,17 +237,16 @@ function App() {
         <Router>
           <div className="app-container">
             <Navbar />
-            <ArduinoAutoConnect />
-            <main>
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/about" element={<About />} />
-                <Route path="/settings" element={<Settings />} />
-                <Route path="/debug" element={<Debug />} />
-                <Route path="/game" element={<Game />} />
-                <Route path="/highscores" element={<Highscores />} /> {/* Add this line */}
-              </Routes>
-            </main>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/debug" element={<Debug />} />
+              <Route path="/game" element={<Game />} />
+              <Route path="/highscores" element={<Highscores />} />
+              {/* Add AutoConnectWithNavigation as a route element to access navigation */}
+            </Routes>
+            <AutoConnectWithNavigation />
           </div>
         </Router>
       </LaserConfigProvider>
