@@ -1,4 +1,4 @@
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
@@ -140,6 +140,7 @@ impl AudioManager {
 // This struct runs in a dedicated audio thread and is not shared
 struct AudioService {
     _stream: Option<OutputStream>,
+    stream_handle: Option<OutputStreamHandle>, // new field
     music_sink: Option<Sink>,
     effects_sink: Option<Sink>,
     master_volume: f32,
@@ -160,6 +161,7 @@ impl AudioService {
         // Initialize with default settings
         let mut service = Self {
             _stream: None,
+            stream_handle: None, // initialize new field
             music_sink: None,
             effects_sink: None,
             master_volume: 0.7, // Default to 70%
@@ -172,14 +174,15 @@ impl AudioService {
         // Create output stream
         println!("Attempting to create audio output stream...");
         match OutputStream::try_default() {
-            Ok((stream, stream_handle)) => {
+            Ok((stream, handle)) => {
                 println!("Audio output stream created successfully");
+                service.stream_handle = Some(handle.clone()); // store handle
 
-                match Sink::try_new(&stream_handle) {
+                match Sink::try_new(&handle) {
                     Ok(music_sink) => {
                         println!("Music sink created successfully");
 
-                        match Sink::try_new(&stream_handle) {
+                        match Sink::try_new(&handle) {
                             Ok(effects_sink) => {
                                 println!("Effects sink created successfully");
 
@@ -225,7 +228,7 @@ impl AudioService {
         if let Ok(exe_path) = env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let prod_path = exe_dir.join("assets").join("audio");
-                if prod_path.exists() && prod_path.is_dir() {
+                if (prod_path.exists() && prod_path.is_dir()) {
                     println!("Using production asset path: {:?}", prod_path);
                     return prod_path;
                 }
@@ -270,8 +273,9 @@ impl AudioService {
                     match Decoder::new(reader) {
                         Ok(source) => {
                             println!("Successfully decoded sound file, adding to sink");
-                            // Clone the sink to avoid mutable borrow issues
                             sink.append(source);
+                            // Ensure the sink is playing so that the effect gets heard
+                            sink.play();
                             println!("Current effect volume: {}", sink.volume());
                             Ok(())
                         }
@@ -290,44 +294,44 @@ impl AudioService {
             println!("Ambient audio disabled, not starting background music");
             return Ok(());
         }
-
-        if let Some(sink) = &self.music_sink {
-            // First stop any playing music
-            sink.stop();
-            println!("Stopped previous background music");
-
-            // Construct full path to background music
-            let music_path = self.asset_dir.join("loop.wav");
-            println!("Attempting to play background music from: {:?}", music_path);
-
-            // Check if file exists
-            if !music_path.exists() {
-                return Err(format!("Background music file not found: {:?}", music_path));
-            }
-
-            println!("Music file exists, attempting to open and decode...");
-
-            // Open the file and decode it
-            match File::open(&music_path) {
-                Ok(file) => {
-                    let reader = BufReader::new(file);
-                    match Decoder::new(reader) {
-                        Ok(source) => {
-                            println!("Successfully decoded music file, setting to loop");
-                            // Loop the source forever
-                            let looped_source = source.repeat_infinite();
-                            sink.append(looped_source);
-                            sink.play();
-                            println!("Background music started with volume: {}", sink.volume());
-                            Ok(())
+        // Instead of reusing the old music_sink, create a new sink.
+        if let Some(handle) = &self.stream_handle {
+            match Sink::try_new(handle) {
+                Ok(new_music_sink) => {
+                    new_music_sink.set_volume(self.master_volume);
+                    // Construct full path to background music
+                    let music_path = self.asset_dir.join("loop.wav");
+                    println!("Attempting to play background music from: {:?}", music_path);
+                    if !music_path.exists() {
+                        return Err(format!("Background music file not found: {:?}", music_path));
+                    }
+                    println!("Music file exists, attempting to open and decode...");
+                    match File::open(&music_path) {
+                        Ok(file) => {
+                            let reader = BufReader::new(file);
+                            match Decoder::new(reader) {
+                                Ok(source) => {
+                                    println!("Successfully decoded music file, setting to loop");
+                                    let looped_source = source.repeat_infinite();
+                                    new_music_sink.append(looped_source);
+                                    new_music_sink.play();
+                                    println!(
+                                        "Background music started with volume: {}",
+                                        new_music_sink.volume()
+                                    );
+                                    self.music_sink = Some(new_music_sink);
+                                    Ok(())
+                                }
+                                Err(e) => Err(format!("Failed to decode music file: {}", e)),
+                            }
                         }
-                        Err(e) => Err(format!("Failed to decode music file: {}", e)),
+                        Err(e) => Err(format!("Failed to open music file: {}", e)),
                     }
                 }
-                Err(e) => Err(format!("Failed to open music file: {}", e)),
+                Err(e) => Err(format!("Failed to create a new music sink: {}", e)),
             }
         } else {
-            Err("Audio system not initialized - music_sink is None".to_string())
+            Err("Audio system not initialized - stream_handle is None".to_string())
         }
     }
 
