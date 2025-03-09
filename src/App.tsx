@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import About from "./pages/About";
 import Settings from "./pages/Settings";
 import Debug from "./pages/Debug";
+import Game from "./pages/Game";
 import Navbar from "./components/Navbar";
 import { LaserConfigProvider } from "./context/LaserConfigContext";
 import "./App.css";
@@ -46,6 +47,7 @@ function App() {
                 <Route path="/about" element={<About />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/debug" element={<Debug />} />
+                <Route path="/game" element={<Game />} />
               </Routes>
             </main>
           </div>

@@ -6,6 +6,7 @@ import {
   defaultLaserConfig,
   GameSettings,
   ArduinoSettings,
+  SoundSettings,
 } from "../types/LaserConfig";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -15,6 +16,7 @@ interface LaserConfigContextType {
   updateLaser: (laser: LaserConfig) => Promise<void>;
   updateGameSettings: (settings: GameSettings) => Promise<void>;
   updateArduinoSettings: (settings: ArduinoSettings) => Promise<void>;
+  updateSoundSettings: (settings: SoundSettings) => Promise<void>;
   connectArduino: (port: string, baudRate: number) => Promise<void>;
   disconnectArduino: () => Promise<void>;
   addLaser: () => Promise<void>;
@@ -104,6 +106,15 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const newConfig = {
       ...laserConfig,
       arduinoSettings: settings,
+    };
+    setLaserConfig(newConfig);
+    await saveConfig(newConfig);
+  };
+
+  const updateSoundSettings = async (settings: SoundSettings) => {
+    const newConfig = {
+      ...laserConfig,
+      soundSettings: settings,
     };
     setLaserConfig(newConfig);
     await saveConfig(newConfig);
@@ -204,6 +215,7 @@ export const LaserConfigProvider: React.FC<{ children: React.ReactNode }> = ({ c
         updateLaser,
         updateGameSettings,
         updateArduinoSettings,
+        updateSoundSettings,
         connectArduino,
         disconnectArduino,
         addLaser,

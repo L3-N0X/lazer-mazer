@@ -1,9 +1,14 @@
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_store::StoreExt;
+
+// Add the audio module
+mod audio;
+use audio::{AudioManager, SoundEffect};
 
 // Store parsed sensor values for use across the application
 #[derive(Clone, serde::Serialize)]
@@ -16,8 +21,56 @@ impl SensorData {
         Self { values: Vec::new() }
     }
 
-    fn update(&mut self, values: Vec<u16>) {
-        self.values = values;
+    fn update(&mut self, new_values: Vec<u16>) {
+        self.values = new_values;
+    }
+}
+
+// Track game state including triggered lasers
+struct GameState {
+    is_active: bool,
+    triggered_lasers: HashSet<usize>, // Track which sensor indices have triggered
+    laser_sensitivities: Vec<u16>,    // Store sensitivity thresholds for each laser
+}
+
+impl GameState {
+    fn new() -> Self {
+        Self {
+            is_active: false,
+            triggered_lasers: HashSet::new(),
+            laser_sensitivities: Vec::new(),
+        }
+    }
+
+    fn start_game(&mut self) {
+        self.is_active = true;
+    }
+
+    fn stop_game(&mut self) {
+        self.is_active = false;
+    }
+
+    fn reset_triggers(&mut self) {
+        self.triggered_lasers.clear();
+    }
+
+    fn reactivate_laser(&mut self, sensor_index: usize) {
+        self.triggered_lasers.remove(&sensor_index);
+    }
+
+    fn update_sensitivities(&mut self, sensitivities: Vec<u16>) {
+        self.laser_sensitivities = sensitivities;
+    }
+
+    fn is_laser_triggered(&self, sensor_index: usize, value: u16) -> bool {
+        if sensor_index >= self.laser_sensitivities.len() {
+            return false;
+        }
+
+        let threshold = self.laser_sensitivities[sensor_index];
+        // Check if value is below threshold (beam broken)
+        let normalized_value = (value as f32 / 1023.0) * 100.0;
+        normalized_value < threshold as f32
     }
 }
 
@@ -25,7 +78,6 @@ impl SensorData {
 struct SerialManager {
     reading_thread: Option<JoinHandle<()>>,
     stop_sender: Option<Sender<()>>,
-    format_data: bool,
 }
 
 impl SerialManager {
@@ -33,7 +85,6 @@ impl SerialManager {
         Self {
             reading_thread: None,
             stop_sender: None,
-            format_data: false,
         }
     }
 
@@ -46,10 +97,6 @@ impl SerialManager {
             let _ = handle.join();
         }
     }
-
-    fn set_format_mode(&mut self, format: bool) {
-        self.format_data = format;
-    }
 }
 
 // Command to list available serial ports.
@@ -60,8 +107,87 @@ fn list_ports() -> Result<Vec<String>, String> {
         .map(|ports| ports.into_iter().map(|p| p.port_name).collect())
 }
 
+// Command to start a new game and reset audio triggers
+#[tauri::command]
+fn start_game(
+    game_state: tauri::State<Arc<Mutex<GameState>>>,
+    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+) -> Result<(), String> {
+    let mut state = game_state.lock().map_err(|e| e.to_string())?;
+    state.start_game();
+    state.reset_triggers();
+
+    // Play game start sound
+    if let Ok(mut manager) = audio_manager.lock() {
+        manager.play_effect(SoundEffect::GameStart).ok();
+        manager.start_background_music().ok();
+    }
+
+    Ok(())
+}
+
+// Command to stop the current game
+#[tauri::command]
+fn stop_game(
+    game_state: tauri::State<Arc<Mutex<GameState>>>,
+    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+) -> Result<(), String> {
+    let mut state = game_state.lock().map_err(|e| e.to_string())?;
+    state.stop_game();
+
+    // Stop background music
+    if let Ok(manager) = audio_manager.lock() {
+        manager.toggle_music(false);
+    }
+
+    Ok(())
+}
+
+// Command to reactivate a specific laser
+#[tauri::command]
+fn reactivate_laser(
+    sensor_index: usize,
+    game_state: tauri::State<Arc<Mutex<GameState>>>,
+) -> Result<(), String> {
+    let mut state = game_state.lock().map_err(|e| e.to_string())?;
+    state.reactivate_laser(sensor_index);
+    Ok(())
+}
+
+// Command to update laser sensitivities from frontend
+#[tauri::command]
+fn update_laser_sensitivities(
+    sensitivities: Vec<u16>,
+    game_state: tauri::State<Arc<Mutex<GameState>>>,
+) -> Result<(), String> {
+    let mut state = game_state.lock().map_err(|e| e.to_string())?;
+    state.update_sensitivities(sensitivities);
+    Ok(())
+}
+
+// Command to update audio settings
+#[tauri::command]
+fn update_audio_settings(
+    master_volume: f32,
+    effect_volume: f32,
+    ambient_enabled: bool,
+    effects_enabled: bool,
+    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
+) -> Result<(), String> {
+    if let Ok(mut manager) = audio_manager.lock() {
+        manager.update_settings(
+            master_volume,
+            effect_volume,
+            ambient_enabled,
+            effects_enabled,
+        );
+        Ok(())
+    } else {
+        Err("Failed to update audio settings".to_string())
+    }
+}
+
 // Command to configure and start reading from a serial port.
-// It takes the USB port name, baud rate
 #[tauri::command]
 fn configure_serial(
     port: String,
@@ -69,12 +195,13 @@ fn configure_serial(
     app_handle: tauri::AppHandle,
     state: tauri::State<Arc<Mutex<SerialManager>>>,
     sensor_data: tauri::State<Arc<Mutex<SensorData>>>,
+    game_state: tauri::State<Arc<Mutex<GameState>>>,
+    audio_manager: tauri::State<Arc<Mutex<AudioManager>>>,
 ) -> Result<(), String> {
     // Lock our SerialManager state.
     let mut manager = state.lock().map_err(|e| e.to_string())?;
     // Stop any existing thread.
     manager.stop();
-    // Set the formatting mode
 
     // Try opening the serial port.
     let port_result = serialport::new(port.clone(), baud_rate)
@@ -87,7 +214,9 @@ fn configure_serial(
 
     // Clone the app handle so the thread can emit events.
     let app_handle_clone = app_handle.clone();
-    let sensor_data = Arc::clone(&sensor_data);
+    let sensor_data_clone = Arc::clone(&sensor_data);
+    let game_state_clone = Arc::clone(&game_state);
+    let audio_manager_clone = Arc::clone(&audio_manager);
 
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(serial_port);
@@ -105,6 +234,21 @@ fn configure_serial(
                     // Special case for "buzzer" message
                     if trimmed == "buzzer" {
                         let _ = app_handle_clone.emit("buzzer", true);
+
+                        // Play buzzer sound if game is active
+                        if let Ok(game_state) = game_state_clone.lock() {
+                            if game_state.is_active {
+                                if let Ok(audio) = audio_manager_clone.lock() {
+                                    let _ = audio.play_effect(SoundEffect::Buzzer);
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Special case for "start" message
+                    if trimmed == "start" {
+                        let _ = app_handle_clone.emit("start-button", true);
                         continue;
                     }
 
@@ -114,8 +258,29 @@ fn configure_serial(
 
                     if let Ok(parsed_values) = values {
                         // Update shared sensor data
-                        if let Ok(mut sensor_state) = sensor_data.lock() {
+                        if let Ok(mut sensor_state) = sensor_data_clone.lock() {
                             sensor_state.update(parsed_values.clone());
+                        }
+
+                        // Process values for audio triggers if game is active
+                        if let Ok(mut game_state) = game_state_clone.lock() {
+                            if game_state.is_active {
+                                // Check each laser value against its threshold
+                                for (index, &value) in parsed_values.iter().enumerate() {
+                                    // If laser is triggered and hasn't played sound yet
+                                    if game_state.is_laser_triggered(index, value)
+                                        && !game_state.triggered_lasers.contains(&index)
+                                    {
+                                        // Mark as triggered
+                                        game_state.triggered_lasers.insert(index);
+
+                                        // Play laser broken sound effect
+                                        if let Ok(audio) = audio_manager_clone.lock() {
+                                            let _ = audio.play_effect(SoundEffect::LaserBroken);
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Emit formatted data
@@ -161,6 +326,9 @@ pub fn run() {
         // Manage the SerialManager and SensorData state
         .manage(Arc::new(Mutex::new(SerialManager::new())))
         .manage(Arc::new(Mutex::new(SensorData::new())))
+        // Add GameState and AudioManager to state
+        .manage(Arc::new(Mutex::new(GameState::new())))
+        .manage(AudioManager::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         // Register our Tauri commands.
@@ -168,9 +336,22 @@ pub fn run() {
             list_ports,
             configure_serial,
             stop_serial,
+            start_game,
+            stop_game,
+            reactivate_laser,
+            update_laser_sensitivities,
+            update_audio_settings,
         ])
         .setup(|app| {
             app.store("settings.json")?;
+
+            // Initialize audio system during setup
+            if let Some(audio_manager) = app.try_state::<Arc<Mutex<AudioManager>>>() {
+                if let Ok(mut manager) = audio_manager.lock() {
+                    let _ = manager.initialize();
+                }
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

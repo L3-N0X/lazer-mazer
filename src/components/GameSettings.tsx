@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
-  Slider,
   FormControlLabel,
   Switch,
   TextField,
@@ -10,7 +9,12 @@ import {
   Alert,
   Paper,
   Divider,
+  IconButton,
+  FormControl,
+  OutlinedInput,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import RemoveIcon from "@mui/icons-material/Remove";
 import { useLaserConfig } from "../context/LaserConfigContext";
 
 export const GameSettings: React.FC = () => {
@@ -29,13 +33,43 @@ export const GameSettings: React.FC = () => {
     }
   }, [isLoading, laserConfig]);
 
-  const handleMaxTouchesChange = (_event: Event, newValue: number | number[]) => {
-    const value = newValue as number;
-    setMaxTouches(value);
+  const handleMaxTouchesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      let value = parseInt(event.target.value, 10);
+      if (isNaN(value)) value = 0;
+      if (value >= 0) {
+        setMaxTouches(value);
+        saveSettings({
+          ...laserConfig.gameSettings,
+          maxAllowedTouches: value,
+        });
+        setError(null);
+      } else {
+        setError("Maximum touches cannot be negative");
+      }
+    } catch (err) {
+      setError("Please enter a valid number");
+    }
+  };
+
+  const increaseMaxTouches = () => {
+    const newValue = maxTouches + 1;
+    setMaxTouches(newValue);
     saveSettings({
       ...laserConfig.gameSettings,
-      maxAllowedTouches: value,
+      maxAllowedTouches: newValue,
     });
+  };
+
+  const decreaseMaxTouches = () => {
+    if (maxTouches > 0) {
+      const newValue = maxTouches - 1;
+      setMaxTouches(newValue);
+      saveSettings({
+        ...laserConfig.gameSettings,
+        maxAllowedTouches: newValue,
+      });
+    }
   };
 
   const handleReactivateChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,14 +116,6 @@ export const GameSettings: React.FC = () => {
     return <Typography>Loading game settings...</Typography>;
   }
 
-  // Calculate the max allowed touches based on the number of active lasers
-  const connectedLaserCount = laserConfig.lasers.filter((laser) => laser.enabled).length;
-  const maxAllowedTouchesValue = Math.min(maxTouches, connectedLaserCount);
-  const marks = Array.from({ length: connectedLaserCount + 1 }, (_, i) => ({
-    value: i,
-    label: i.toString(),
-  }));
-
   return (
     <Box sx={{ mt: 2 }}>
       {error && (
@@ -105,24 +131,49 @@ export const GameSettings: React.FC = () => {
         <Divider sx={{ mb: 2 }} />
 
         <Box sx={{ mb: 3 }}>
-          <Typography gutterBottom>
-            Maximum Allowed Laser Touches: {maxAllowedTouchesValue}
-          </Typography>
-          <Box sx={{ px: 1 }}>
-            <Slider
-              value={maxAllowedTouchesValue}
-              onChange={handleMaxTouchesChange}
-              aria-labelledby="max-touches-slider"
-              valueLabelDisplay="auto"
-              step={1}
-              marks={marks}
-              min={0}
-              max={connectedLaserCount}
-              sx={{ mt: 2, mb: 1 }}
-            />
+          <Typography gutterBottom>Maximum Allowed Laser Touches:</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mt: 1 }}>
+            <FormControl variant="outlined" size="small">
+              <OutlinedInput
+                id="max-touches-input"
+                type="number"
+                value={maxTouches}
+                onChange={handleMaxTouchesChange}
+                startAdornment={
+                  <InputAdornment position="start">
+                    <IconButton
+                      onClick={decreaseMaxTouches}
+                      edge="start"
+                      disabled={maxTouches <= 0}
+                      size="small"
+                    >
+                      <RemoveIcon />
+                    </IconButton>
+                  </InputAdornment>
+                }
+                endAdornment={
+                  <InputAdornment position="end">
+                    <IconButton onClick={increaseMaxTouches} edge="end" size="small">
+                      <AddIcon />
+                    </IconButton>
+                  </InputAdornment>
+                }
+                inputProps={{
+                  min: 0,
+                  style: {
+                    textAlign: "center",
+                    width: "50px",
+                  },
+                }}
+              />
+            </FormControl>
+            <Typography variant="body2" sx={{ display: "inline" }}>
+              {maxTouches === 0 ? "(No limit)" : ""}
+            </Typography>
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            Maximum number of lasers that can be touched during a run before failing.
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Maximum number of lasers that can be touched during a run before failing. Set to 0 for
+            unlimited touches.
           </Typography>
         </Box>
       </Paper>

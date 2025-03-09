@@ -19,10 +19,18 @@ export interface ArduinoSettings {
   isConnected: boolean;
 }
 
+export interface SoundSettings {
+  masterVolume: number;
+  effectVolume: number;
+  ambientSound: boolean;
+  effectsSound: boolean;
+}
+
 export interface LaserConfigState {
   lasers: LaserConfig[];
   gameSettings: GameSettings;
   arduinoSettings: ArduinoSettings;
+  soundSettings: SoundSettings;
 }
 
 export const defaultLaserConfig: LaserConfigState = {
@@ -40,5 +48,11 @@ export const defaultLaserConfig: LaserConfigState = {
     port: "",
     baudRate: 9600,
     isConnected: false,
+  },
+  soundSettings: {
+    masterVolume: 70,
+    effectVolume: 70,
+    ambientSound: true,
+    effectsSound: true,
   },
 };

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Container,
   Typography,
@@ -15,6 +15,7 @@ import {
 import { LaserConfigList } from "../components/LaserConfigList";
 import { GameSettings } from "../components/GameSettings";
 import { ArduinoSettings } from "../components/ArduinoSettings";
+import { useLaserConfig } from "../context/LaserConfigContext";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -40,16 +41,60 @@ function TabPanel(props: TabPanelProps) {
 
 const Settings: React.FC = () => {
   const [tabValue, setTabValue] = React.useState(0);
-  const [volume, setVolume] = React.useState<number>(70);
-  const [ambientSound, setAmbientSound] = React.useState<boolean>(true);
-  const [effectsSound, setEffectsSound] = React.useState<boolean>(true);
+  const { laserConfig, updateSoundSettings } = useLaserConfig();
+  const { soundSettings } = laserConfig;
+
+  const [volume, setVolume] = React.useState<number>(soundSettings.masterVolume);
+  const [effectVolume, setEffectVolume] = React.useState<number>(soundSettings.effectVolume);
+  const [ambientSound, setAmbientSound] = React.useState<boolean>(soundSettings.ambientSound);
+  const [effectsSound, setEffectsSound] = React.useState<boolean>(soundSettings.effectsSound);
+
+  useEffect(() => {
+    // Update local state if context values change
+    setVolume(soundSettings.masterVolume);
+    setEffectVolume(soundSettings.effectVolume);
+    setAmbientSound(soundSettings.ambientSound);
+    setEffectsSound(soundSettings.effectsSound);
+  }, [soundSettings]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
   const handleVolumeChange = (_event: Event, newValue: number | number[]) => {
-    setVolume(newValue as number);
+    const newVolume = newValue as number;
+    setVolume(newVolume);
+    updateSoundSettings({
+      ...soundSettings,
+      masterVolume: newVolume,
+    });
+  };
+
+  const handleEffectVolumeChange = (_event: Event, newValue: number | number[]) => {
+    const newEffectVolume = newValue as number;
+    setEffectVolume(newEffectVolume);
+    updateSoundSettings({
+      ...soundSettings,
+      effectVolume: newEffectVolume,
+    });
+  };
+
+  const handleAmbientSoundChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.checked;
+    setAmbientSound(newValue);
+    updateSoundSettings({
+      ...soundSettings,
+      ambientSound: newValue,
+    });
+  };
+
+  const handleEffectsSoundChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.checked;
+    setEffectsSound(newValue);
+    updateSoundSettings({
+      ...soundSettings,
+      effectsSound: newValue,
+    });
   };
 
   return (
@@ -129,23 +174,23 @@ const Settings: React.FC = () => {
             />
           </Box>
 
+          <Box sx={{ mb: 3 }}>
+            <Typography gutterBottom>Effect Volume</Typography>
+            <Slider
+              value={effectVolume}
+              onChange={handleEffectVolumeChange}
+              aria-labelledby="effect-volume-slider"
+              valueLabelDisplay="auto"
+            />
+          </Box>
+
           <FormGroup>
             <FormControlLabel
-              control={
-                <Switch
-                  checked={ambientSound}
-                  onChange={(e) => setAmbientSound(e.target.checked)}
-                />
-              }
+              control={<Switch checked={ambientSound} onChange={handleAmbientSoundChange} />}
               label="Ambient Sounds"
             />
             <FormControlLabel
-              control={
-                <Switch
-                  checked={effectsSound}
-                  onChange={(e) => setEffectsSound(e.target.checked)}
-                />
-              }
+              control={<Switch checked={effectsSound} onChange={handleEffectsSoundChange} />}
               label="Sound Effects"
             />
           </FormGroup>

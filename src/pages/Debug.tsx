@@ -16,6 +16,7 @@ import Grid from "@mui/material/Grid2";
 import PauseIcon from "@mui/icons-material/Pause";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useLaserConfig } from "../context/LaserConfigContext";
 
@@ -24,6 +25,7 @@ const Debug: React.FC = () => {
   const [serialData, setSerialData] = useState<number[]>([]);
   const [rawMessages, setRawMessages] = useState<string[]>([]);
   const [buzzerEvents, setBuzzerEvents] = useState<string[]>([]);
+  const [startEvents, setStartEvents] = useState<string[]>([]);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [listeners, setListeners] = useState<UnlistenFn[]>([]);
 
@@ -31,11 +33,13 @@ const Debug: React.FC = () => {
   const [frozenSerialData, setFrozenSerialData] = useState<number[]>([]);
   const [frozenMessages, setFrozenMessages] = useState<string[]>([]);
   const [frozenBuzzerEvents, setFrozenBuzzerEvents] = useState<string[]>([]);
+  const [frozenStartEvents, setFrozenStartEvents] = useState<string[]>([]);
 
   // Display data should use frozen state when paused
   const displaySerialData = isPaused ? frozenSerialData : serialData;
   const displayMessages = isPaused ? frozenMessages : rawMessages;
   const displayBuzzerEvents = isPaused ? frozenBuzzerEvents : buzzerEvents;
+  const displayStartEvents = isPaused ? frozenStartEvents : startEvents;
 
   // Setup event listeners
   useEffect(() => {
@@ -60,6 +64,13 @@ const Debug: React.FC = () => {
           setBuzzerEvents((prev) => [buzzerMessage, ...prev.slice(0, 99)]);
         });
 
+        // Listen for start button events
+        const unlistenStart = await listen("start-button", () => {
+          const timestamp = new Date().toLocaleTimeString();
+          const startMessage = `${timestamp}: Start button pressed`;
+          setStartEvents((prev) => [startMessage, ...prev.slice(0, 99)]);
+        });
+
         // Listen for error events
         const unlistenError = await listen("serial-error", (event) => {
           const timestamp = new Date().toLocaleTimeString();
@@ -67,7 +78,7 @@ const Debug: React.FC = () => {
           setRawMessages((prev) => [errorMsg, ...prev.slice(0, 99)]);
         });
 
-        unlistenFunctions = [unlistenSerialData, unlistenBuzzer, unlistenError];
+        unlistenFunctions = [unlistenSerialData, unlistenBuzzer, unlistenStart, unlistenError];
         setListeners(unlistenFunctions);
       };
 
@@ -87,6 +98,7 @@ const Debug: React.FC = () => {
         setFrozenSerialData([...serialData]);
         setFrozenMessages([...rawMessages]);
         setFrozenBuzzerEvents([...buzzerEvents]);
+        setFrozenStartEvents([...startEvents]);
 
         // Clean up listeners
         listeners.forEach(async (unlisten) => await unlisten());
@@ -114,9 +126,11 @@ const Debug: React.FC = () => {
     if (isPaused) {
       setFrozenMessages([]);
       setFrozenBuzzerEvents([]);
+      setFrozenStartEvents([]);
     } else {
       setRawMessages([]);
       setBuzzerEvents([]);
+      setStartEvents([]);
     }
   };
 
@@ -453,7 +467,7 @@ const Debug: React.FC = () => {
           </Paper>
 
           {/* Buzzer Events Section */}
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="h6" gutterBottom>
               Buzzer Events
             </Typography>
@@ -491,6 +505,50 @@ const Debug: React.FC = () => {
               ) : (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
                   No buzzer events detected
+                </Typography>
+              )}
+            </Box>
+          </Paper>
+
+          {/* Start Button Events Section */}
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Start Button Events
+            </Typography>
+            <Divider sx={{ mb: 2 }} />
+
+            {/* Fixed height container to prevent layout shifts */}
+            <Box sx={{ minHeight: 50 }}>
+              {
+                <Alert icon={<PlayCircleOutlineIcon />} severity="info" sx={{ mb: 2 }}>
+                  {displayStartEvents.length} start button event
+                  {displayStartEvents.length !== 1 ? "s" : ""} detected
+                </Alert>
+              }
+            </Box>
+
+            <Box
+              sx={{
+                height: 150,
+                overflowY: "auto",
+                fontFamily: "monospace",
+                fontSize: "0.85rem",
+                p: 1,
+                bgcolor: "background.paper",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+              }}
+            >
+              {displayStartEvents.length > 0 ? (
+                displayStartEvents.map((msg, index) => (
+                  <Box key={index} sx={{ py: 0.5 }}>
+                    {msg}
+                  </Box>
+                ))
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                  No start button events detected
                 </Typography>
               )}
             </Box>
