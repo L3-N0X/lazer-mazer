@@ -29,7 +29,9 @@ export const GameStatBox = styled(Paper)(({ theme }) => ({
 }));
 
 // Updated LaserListItem to support blinking and reactivation animations
-export const LaserListItem = styled(ListItem)<{
+export const LaserListItem = styled(ListItem, {
+  shouldForwardProp: (prop) => prop !== "active" && prop !== "blinking",
+})<{
   active: boolean;
   blinking: boolean;
 }>(({ theme, active, blinking }) => ({
@@ -49,23 +51,25 @@ export const LaserListItem = styled(ListItem)<{
 }));
 
 // Reactivation progress bar
-export const ReactivationProgress = styled(LinearProgress)(({ theme }) => ({
+export const ReactivationProgress = styled(LinearProgress)(() => ({
   position: "absolute",
   bottom: 0,
   left: 0,
   right: 0,
-  height: 5,
+  height: "100%",
   backgroundColor: "transparent",
   "& .MuiLinearProgress-bar": {
-    backgroundColor: theme.palette.error.main,
+    backgroundColor: "#FFA39A",
     transition: "none", // We'll handle animation ourselves for smoothness
   },
 }));
 
 // Update LaserGrid to be more responsive
-export const LaserGrid = styled(List)<{ useGridLayout: boolean }>(({ theme, useGridLayout }) => ({
+export const LaserGrid = styled(List, {
+  shouldForwardProp: (prop) => prop !== "displayasgridlayout",
+})<{ displayasgridlayout: boolean }>(({ theme, displayasgridlayout }) => ({
   display: "grid",
-  gridTemplateColumns: useGridLayout ? `repeat(auto-fit, minmax(29%, 1fr))` : "1fr",
+  gridTemplateColumns: displayasgridlayout ? `repeat(auto-fit, minmax(29%, 1fr))` : "1fr",
   gap: theme.spacing(2),
   width: "100%",
   height: "100%",
@@ -100,4 +104,20 @@ export const GameOverContent = styled(Paper)(({ theme }) => ({
   justifyContent: "center",
   maxWidth: "800px",
   width: "100%",
+}));
+
+export const BigCountdownOverlay = styled("div")(() => ({
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "10rem",
+  zIndex: 1000,
+  color: "#fff",
+  // muted background
+  backgroundColor: "rgba(0, 0, 0, 0.5)",
 }));

@@ -40,7 +40,7 @@ export const useDebugMonitor = () => {
     if (!isPaused) {
       const setupListeners = async () => {
         // Listen for serial data
-        const unlistenSerialData = await listen("serial-data", (event) => {
+        const unlistenSerialData = await listen("laser-sensor-data", (event) => {
           const values = event.payload as number[];
           setSerialData(values);
 

@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { LaserConfigProvider, useLaserConfig } from "./context/LaserConfigContext";
 import "./App.css";
 import { Snackbar, Alert, Button, Box } from "@mui/material";
+import { Logger } from "./utils/Logger";
 
 // Create a theme with Roboto font
 const theme = createTheme({
@@ -101,7 +102,7 @@ const ArduinoAutoConnect = () => {
       }
 
       try {
-        console.log(`Attempting to connect to Arduino at ${port} with baud rate ${baudRate}...`);
+        Logger.log(`Attempting to connect to Arduino at ${port} with baud rate ${baudRate}...`);
         connectionAttemptedRef.current = true;
         await connectArduino(port, baudRate);
 
@@ -192,35 +193,37 @@ const ArduinoAutoConnect = () => {
   };
 
   return (
-    <Snackbar
-      open={showError}
-      autoHideDuration={null}
-      onClose={handleCloseError}
-      anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-    >
-      <Alert
-        onClose={handleCloseError}
-        severity="error"
-        sx={{ width: "100%" }}
-        action={
-          <Box sx={{ display: "flex" }}>
-            {!laserConfig.arduinoSettings.autoConnectEnabled && (
-              <Button color="inherit" size="small" onClick={handleEnableAutoConnect} sx={{ mr: 1 }}>
-                Enable Auto-Connect
+    <>
+      {showError && (
+        <Snackbar
+          open={showError}
+          onClose={handleCloseError}
+          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        >
+          <Alert onClose={handleCloseError} severity="error" sx={{ width: "100%" }}>
+            {getErrorMessage()}
+            <Box sx={{ mt: 1, display: "flex" }}>
+              {!laserConfig.arduinoSettings.autoConnectEnabled && (
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={handleEnableAutoConnect}
+                  sx={{ mr: 1 }}
+                >
+                  Enable Auto-Connect
+                </Button>
+              )}
+              <Button color="inherit" size="small" onClick={goToSettings} sx={{ mr: 1 }}>
+                Open Settings
               </Button>
-            )}
-            <Button color="inherit" size="small" onClick={goToSettings} sx={{ mr: 1 }}>
-              Open Settings
-            </Button>
-            <Button color="inherit" size="small" onClick={handleRetryConnection}>
-              Retry Now
-            </Button>
-          </Box>
-        }
-      >
-        {getErrorMessage()}
-      </Alert>
-    </Snackbar>
+              <Button color="inherit" size="small" onClick={handleRetryConnection}>
+                Retry Now
+              </Button>
+            </Box>
+          </Alert>
+        </Snackbar>
+      )}
+    </>
   );
 };
 
