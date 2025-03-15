@@ -1,5 +1,14 @@
 import React from "react";
-import { Box, Typography, Button, Container, Chip, Fade, TextField } from "@mui/material";
+import {
+  Box,
+  Typography,
+  Button,
+  Container,
+  Chip,
+  Fade,
+  TextField,
+  Autocomplete,
+} from "@mui/material";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
@@ -14,6 +23,7 @@ import {
   GameOverModal,
   GameOverContent,
   ReactivationProgress,
+  BigCountdownOverlay,
 } from "../components/GameComponents";
 // Import custom hook
 import { useGameLogic } from "../hooks/useGameLogic";
@@ -32,7 +42,8 @@ const Game: React.FC = () => {
     gameSuccess,
     playerName,
     showSaveScore,
-    useGridLayout,
+    displayasgridlayout,
+    countdown,
     setContainerRef,
     setPlayerName,
     startGame,
@@ -54,8 +65,37 @@ const Game: React.FC = () => {
         display: "flex",
         flexDirection: "column",
         overflow: "hidden", // Prevent scrolling
+        position: "relative", // Add position relative for the overlay
       }}
     >
+      {/* Countdown Overlay */}
+      {countdown !== "" && (
+        <BigCountdownOverlay>
+          <Typography
+            variant="h1"
+            sx={{
+              fontSize: "40rem",
+              fontWeight: "1000",
+              fontFamily: "Roboto, sans-serif",
+              color: "#FFF",
+              // red text shadow/glow for visibility
+              textShadow:
+                "-20px -20px 60px rgba(255,0,0,0.8), 20px -20px 60px rgba(255,0,0,0.8), -20px 20px 60px rgba(255,0,0,0.8), 20px 20px 60px rgba(255,0,0,0.8)",
+
+              // Amination for countdown
+              animation: "pulse 0.8s infinite",
+              "@keyframes pulse": {
+                "0%": { transform: "scale(1)" },
+                "50%": { transform: "scale(1.1)" },
+                "100%": { transform: "scale(1)" },
+              },
+            }}
+          >
+            {countdown}
+          </Typography>
+        </BigCountdownOverlay>
+      )}
+
       {/* Timer Display */}
       <Box sx={{ textAlign: "center", mb: 3 }}>
         <TimerDisplay variant="h1">{formatTime(gameTime)}</TimerDisplay>
@@ -143,7 +183,7 @@ const Game: React.FC = () => {
 
       {/* Laser Grid - optimized with adaptive layout and animations */}
       <LaserContainer elevation={3} ref={(el) => setContainerRef(el)}>
-        <LaserGrid useGridLayout={useGridLayout}>
+        <LaserGrid displayasgridlayout={displayasgridlayout}>
           {laserConfig.lasers
             .filter((laser) => laser.enabled)
             .sort((a, b) => a.order - b.order)
@@ -153,12 +193,12 @@ const Game: React.FC = () => {
                   active={laserStates[laser.id] || false}
                   blinking={blinkingLasers[laser.id] || false}
                   sx={{
-                    height: useGridLayout ? "auto" : "100%",
-                    minHeight: useGridLayout ? 50 : 60,
+                    height: displayasgridlayout ? "auto" : "100%",
+                    minHeight: displayasgridlayout ? 50 : 60,
                   }}
                 >
                   <Typography
-                    variant={useGridLayout ? "h6" : "h5"} // Smaller text for grid mode
+                    variant={displayasgridlayout ? "h6" : "h5"} // Smaller text for grid mode
                     component="div"
                     sx={{
                       textAlign: "center",
@@ -235,22 +275,31 @@ const Game: React.FC = () => {
               <Typography variant="h6" color="white" sx={{ mb: 2 }} align="center">
                 Speichere deine Zeit in den Highscores!
               </Typography>
-              <TextField
-                fullWidth
-                variant="outlined"
-                label="Spielername"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                sx={{
-                  mb: 2,
-                  input: { color: "white" },
-                  "& .MuiOutlinedInput-root": {
-                    "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
-                    "&:hover fieldset": { borderColor: "white" },
-                    "&.Mui-focused fieldset": { borderColor: "primary.main" },
-                  },
-                  "& .MuiInputLabel-root": { color: "rgba(255, 255, 255, 0.7)" },
-                }}
+
+              <Autocomplete
+                freeSolo
+                // Get the names from the highscores
+                options={laserConfig.highscores.map((score) => score.name)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    variant="outlined"
+                    label="Spielername"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    sx={{
+                      mb: 2,
+                      input: { color: "white" },
+                      "& .MuiOutlinedInput-root": {
+                        "& fieldset": { borderColor: "rgba(255, 255, 255, 0.3)" },
+                        "&:hover fieldset": { borderColor: "white" },
+                        "&.Mui-focused fieldset": { borderColor: "primary.main" },
+                      },
+                      "& .MuiInputLabel-root": { color: "rgba(255, 255, 255, 0.7)" },
+                    }}
+                  />
+                )}
               />
               <Box sx={{ display: "flex", gap: 2, justifyContent: "center" }}>
                 <Button

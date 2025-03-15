@@ -38,6 +38,9 @@ export const ArduinoSettings: React.FC = () => {
   const [serialData, setSerialData] = useState<number[]>([]);
   const [buzzerTriggered, setBuzzerTriggered] = useState<boolean>(false);
   const [autoConnectAttempted, setAutoConnectAttempted] = useState<boolean>(false);
+  // New state for connection stabilization phase
+  const [inStabilizationPhase, setInStabilizationPhase] = useState<boolean>(false);
+  const [stabilizationTimer, setStabilizationTimer] = useState<number | null>(null);
 
   // Common baud rates
   const baudRates = [9600, 19200, 38400, 57600, 115200];
@@ -53,7 +56,12 @@ export const ArduinoSettings: React.FC = () => {
 
     // Listen for serial error events
     const unlistenSerialError = listen("serial-error", (event) => {
-      setError(`Serial Error: ${event.payload}`);
+      const errorMsg = `Serial Error: ${event.payload}`;
+
+      // Only show errors if we're not in the stabilization phase or if it's a critical error
+      if (!inStabilizationPhase || errorMsg.includes("critical")) {
+        setError(errorMsg);
+      }
     });
 
     // Listen for buzzer events
@@ -67,8 +75,13 @@ export const ArduinoSettings: React.FC = () => {
       unlistenSerialData.then((unlisten) => unlisten());
       unlistenSerialError.then((unlisten) => unlisten());
       unlistenBuzzerEvent.then((unlisten) => unlisten());
+
+      // Clear any stabilization timer when unmounting
+      if (stabilizationTimer !== null) {
+        clearTimeout(stabilizationTimer);
+      }
     };
-  }, []);
+  }, [inStabilizationPhase, stabilizationTimer]);
 
   // Update local state when context changes
   useEffect(() => {
@@ -79,7 +92,25 @@ export const ArduinoSettings: React.FC = () => {
 
     if (laserConfig.arduinoSettings.isConnected) {
       setAutoConnectAttempted(true);
-      // Clear any previous error when connected successfully
+
+      // Enter stabilization phase when connection is established
+      setInStabilizationPhase(true);
+
+      // Clear any stabilization timer if it exists
+      if (stabilizationTimer !== null) {
+        clearTimeout(stabilizationTimer);
+      }
+
+      // Set a new timer to exit stabilization phase after 3 seconds
+      const timer = window.setTimeout(() => {
+        setInStabilizationPhase(false);
+        // Clear any previous error when connection is stable
+        setError(null);
+      }, 1000);
+
+      setStabilizationTimer(timer);
+
+      // Clear any previous error that might have been shown
       setError(null);
     }
   }, [laserConfig.arduinoSettings]);
@@ -131,11 +162,24 @@ export const ArduinoSettings: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      setInStabilizationPhase(true); // Enter stabilization phase on manual connect too
       await connectArduino(selectedPort, baudRate);
       setIsConnected(true);
+
+      // Set a timer to exit stabilization phase
+      if (stabilizationTimer !== null) {
+        clearTimeout(stabilizationTimer);
+      }
+
+      const timer = window.setTimeout(() => {
+        setInStabilizationPhase(false);
+      }, 3000);
+
+      setStabilizationTimer(timer);
     } catch (err: any) {
       setError(`Failed to connect: ${err.message || err}`);
       setIsConnected(false);
+      setInStabilizationPhase(false); // Exit stabilization phase on connection error
     } finally {
       setLoading(false);
     }
@@ -145,8 +189,16 @@ export const ArduinoSettings: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+
+      // Clear stabilization timer if exists
+      if (stabilizationTimer !== null) {
+        clearTimeout(stabilizationTimer);
+        setStabilizationTimer(null);
+      }
+
       await disconnectArduino();
       setIsConnected(false);
+      setInStabilizationPhase(false); // No stabilization needed when disconnecting
     } catch (err: any) {
       setError(`Failed to disconnect: ${err.message || err}`);
     } finally {
@@ -162,21 +214,27 @@ export const ArduinoSettings: React.FC = () => {
 
   return (
     <Box sx={{ mt: 2 }}>
-      {error && (
+      {error && !inStabilizationPhase && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      {buzzerTriggered && (
+      {buzzerTriggered && !inStabilizationPhase && (
         <Alert severity="warning" sx={{ mb: 2 }} icon={<NotificationsActiveIcon />}>
           Buzzer triggered!
         </Alert>
       )}
 
-      {autoConnectAttempted && isConnected && (
+      {autoConnectAttempted && isConnected && !inStabilizationPhase && (
         <Alert severity="success" sx={{ mb: 2 }} icon={<SyncIcon />}>
           Auto-connected to Arduino on {selectedPort} at {baudRate} baud.
+        </Alert>
+      )}
+
+      {inStabilizationPhase && isConnected && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Establishing connection to Arduino...
         </Alert>
       )}
 

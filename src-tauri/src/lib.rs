@@ -102,6 +102,10 @@ fn configure_serial(
         let mut reader = BufReader::new(serial_port);
         let mut last_buzzer_time = std::time::Instant::now();
         let mut last_start_time = std::time::Instant::now();
+        let mut last_message = String::new();
+
+        // Define the debounce period in milliseconds
+        const DEBOUNCE_MS: u128 = 2000; // 2 second
 
         loop {
             // Check if a stop signal was received.
@@ -114,17 +118,29 @@ fn configure_serial(
                 Ok(n) if n > 0 => {
                     let trimmed = line.trim().to_string();
 
+                    // Ignore empty lines or duplicates of the last message
+                    if trimmed.is_empty() || trimmed == last_message {
+                        continue;
+                    }
+                    last_message = trimmed.clone();
+
                     let now = std::time::Instant::now();
-                    // Special case for "buzzer" message
+                    // Special case for "buzzer" message with proper debounce using milliseconds
                     if trimmed == "buzzer" {
-                        if now.duration_since(last_buzzer_time).as_secs() >= 1 {
+                        if now.duration_since(last_buzzer_time).as_millis() >= DEBOUNCE_MS {
+                            // println!("Emitting buzzer event (debounced)");
                             let _ = app_handle_clone.emit("buzzer", true);
                             last_buzzer_time = now;
+                        } else {
+                            // println!("Skipping buzzer event (debounce period)");
                         }
                     } else if trimmed == "start" {
-                        if now.duration_since(last_start_time).as_secs() >= 1 {
+                        if now.duration_since(last_start_time).as_millis() >= DEBOUNCE_MS {
+                            // println!("Emitting start-button event (debounced)");
                             let _ = app_handle_clone.emit("start-button", true);
                             last_start_time = now;
+                        } else {
+                            // println!("Skipping start event (debounce period)");
                         }
                     } else {
                         // Parse comma separated values into integers
@@ -152,8 +168,9 @@ fn configure_serial(
                 }
                 Err(e) => {
                     // Forward read errors to the frontend.
+                    // println!("Serial read error: {}", e);
                     let _ = app_handle_clone.emit("serial-error", format!("read error: {}", e));
-                    thread::sleep(std::time::Duration::from_millis(100));
+                    thread::sleep(std::time::Duration::from_millis(300));
                 }
             }
         }

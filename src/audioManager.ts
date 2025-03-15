@@ -135,8 +135,8 @@ export class AudioManager {
     ambientEnabled: boolean,
     effectsEnabled: boolean
   ) {
-    this.musicVolume = musicVolume / 100;
-    this.effectVolume = effectVolume / 100;
+    this.musicVolume = Math.pow(musicVolume / 100, 2);
+    this.effectVolume = Math.pow(effectVolume / 100, 2);
     this.ambientEnabled = ambientEnabled;
     this.effectsEnabled = effectsEnabled;
 
