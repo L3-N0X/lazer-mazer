@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { useLaserConfig } from "../context/LaserConfigContext";
 import { audioManager, SoundEffect } from "../audioManager";
+import { GameStateManager } from "../utils/gameUtils";
 
 export const useGameLogic = () => {
   const { laserConfig, addHighscore } = useLaserConfig();
   const [isGameRunning, setIsGameRunning] = useState(false);
+  const [isGameStarting, setIsGameStarting] = useState(false);
   const [gameTime, setGameTime] = useState(0);
-  const [laserStates, setLaserStates] = useState<{ [id: string]: boolean }>({});
+  const [laserActivationMap, setLaserActivationMap] = useState<{ [id: string]: boolean }>({});
   const [blinkingLasers, setBlinkingLasers] = useState<{ [id: string]: boolean }>({});
   const [reactivationProgress, setReactivationProgress] = useState<{ [id: string]: number }>({});
   const [triggeredCount, setTriggeredCount] = useState(0);
@@ -16,7 +18,6 @@ export const useGameLogic = () => {
   const [gameSuccess, setGameSuccess] = useState(false);
   const [playerName, setPlayerName] = useState("");
   const [showSaveScore, setShowSaveScore] = useState(false);
-  const [isStartButtonActive, setIsStartButtonActive] = useState(false);
 
   const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [useGridLayout, setUseGridLayout] = useState(false);
@@ -25,9 +26,9 @@ export const useGameLogic = () => {
   const listenersRef = useRef<UnlistenFn[]>([]);
   const reactivationTimeoutsRef = useRef<{ [id: string]: ReturnType<typeof setTimeout> }>({});
   const reactivationIntervalsRef = useRef<{ [id: string]: ReturnType<typeof setInterval> }>({});
-
-  // Keep track of the last game start time to prevent multiple starts
-  const lastGameStartRef = useRef<number>(0);
+  const animationTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const lastSoundPlayedRef = useRef<{ [key: string]: number }>({});
+  const gameOverRef = useRef(false);
 
   // Initialize laser states based on config
   useEffect(() => {
@@ -37,7 +38,7 @@ export const useGameLogic = () => {
         initialStates[laser.id] = true;
       }
     });
-    setLaserStates(initialStates);
+    setLaserActivationMap(initialStates);
     setReactivationProgress({}); // Reset progress
     setBlinkingLasers({}); // Reset blinking state
   }, [laserConfig.lasers]);
@@ -57,8 +58,8 @@ export const useGameLogic = () => {
 
     const setupListeners = async () => {
       // Listen for serial data to detect laser breaks
-      const unlistenSerialData = await listen("serial-data", (event) => {
-        // Only process serial data if game is running
+      const unlistenSerialData = await listen("laser-sensor-data", (event) => {
+        // Only process game effects if game is running
         if (!isGameRunning) return;
 
         const values = event.payload as number[];
@@ -70,8 +71,12 @@ export const useGameLogic = () => {
             const normalizedValue = (value / 1023) * 100;
             const isTriggered = normalizedValue < laser.sensitivity;
 
-            // If laser state changes from active to triggered
-            if (laserStates[laser.id] && isTriggered) {
+            // Only trigger if:
+            // 1. Laser is active (red)
+            // 2. Laser is triggered (beam broken)
+            // 3. Laser is not currently in reactivation phase
+            // 4. Game is running (for actual game effects)
+            if (laserActivationMap[laser.id] && isTriggered && !reactivatingLasers[laser.id]) {
               handleLaserTriggered(laser.id);
             }
           }
@@ -87,29 +92,18 @@ export const useGameLogic = () => {
 
       // Listen for start button events with debounce
       const unlistenStartButton = await listen("start-button", () => {
-        // Debounce: prevent multiple start events within 1 second
-        const now = Date.now();
-        if (now - lastGameStartRef.current < 1000) {
-          console.log("Start button debounced");
-          return;
-        }
+        // Prevent multiple start sequences if already starting
+        if (isGameStarting) return;
 
-        if (!isStartButtonActive) {
-          setIsStartButtonActive(true);
-          lastGameStartRef.current = now;
-
-          // If game is already running, stop it first then start new one
-          if (isGameRunning) {
-            resetGame().then(() => {
-              setTimeout(() => {
-                startGame();
-                setIsStartButtonActive(false);
-              }, 300);
-            });
-          } else {
-            startGame();
-            setTimeout(() => setIsStartButtonActive(false), 500);
-          }
+        // If game is already running, stop it first then start new one
+        if (isGameRunning) {
+          resetGame().then(() => {
+            setTimeout(() => {
+              startGame();
+            }, 300);
+          });
+        } else {
+          startGame();
         }
       });
 
@@ -127,13 +121,15 @@ export const useGameLogic = () => {
       listenersRef.current.forEach(async (unlisten) => await unlisten());
       listenersRef.current = [];
     };
-  }, [isGameRunning, laserConfig.lasers, laserStates, isStartButtonActive]);
+  }, [isGameRunning, laserConfig.lasers, laserActivationMap, reactivatingLasers, isGameStarting]);
 
   // Add a separate listener for visual updates that runs regardless of game state
   useEffect(() => {
+    let unlistenVisualUpdates: UnlistenFn | null = null;
+
     const setupVisualListener = async () => {
       // Listen for serial data to update visual state even when game is not running
-      const unlistenVisualUpdates = await listen("serial-data", (event) => {
+      unlistenVisualUpdates = await listen("laser-sensor-data", (event) => {
         const values = event.payload as number[];
 
         // Check each laser to see if it's been triggered (visual only)
@@ -144,7 +140,7 @@ export const useGameLogic = () => {
             const isTriggered = normalizedValue < laser.sensitivity;
 
             // If laser state changes from active to triggered, update visual only when game not running
-            if (laserStates[laser.id] && isTriggered && !isGameRunning) {
+            if (laserActivationMap[laser.id] && isTriggered && !isGameRunning) {
               updateLaserVisual(laser.id);
             }
           }
@@ -156,13 +152,17 @@ export const useGameLogic = () => {
 
     // Only set up this listener when game is NOT running
     if (!isGameRunning) {
-      setupVisualListener().then((unlisten) => {
-        listenersRef.current.push(unlisten);
+      setupVisualListener().then(() => {
+        // No need to push to listenersRef.current as we handle unlistening here
       });
     }
 
-    return () => {};
-  }, [isGameRunning, laserConfig.lasers, laserStates]);
+    return () => {
+      if (unlistenVisualUpdates) {
+        unlistenVisualUpdates(); // Clean up the listener
+      }
+    };
+  }, [isGameRunning, laserConfig.lasers, laserActivationMap]);
 
   // Timer logic
   useEffect(() => {
@@ -213,7 +213,7 @@ export const useGameLogic = () => {
     }));
 
     // After blinking, RESTORE to active state (red) when game isn't running
-    setTimeout(() => {
+    const visualTimeout = setTimeout(() => {
       setBlinkingLasers((prev) => ({
         ...prev,
         [laserId]: false,
@@ -221,30 +221,59 @@ export const useGameLogic = () => {
 
       // Important change: When not in game, lasers remain red after blinking
       if (!isGameRunning) {
-        setLaserStates((prevStates) => ({
+        setLaserActivationMap((prevStates) => ({
           ...prevStates,
           [laserId]: true, // Keep red (active) when not in game
         }));
       }
     }, 900); // 3 blinks at 300ms each = 900ms
+
+    // Store timeout for potential reset
+    animationTimeoutsRef.current.push(visualTimeout);
   };
 
-  // Handle laser triggered with animation logic
+  // Handle laser triggered with animation logic - modified for better reactivation logic
   const handleLaserTriggered = (laserId: string) => {
-    // Only process if game is running
+    // Only count triggers and play sounds if game is running
     if (!isGameRunning) return;
 
-    // Check if this laser is already in reactivation phase - don't count it again
-    if (reactivatingLasers[laserId]) {
-      return; // Skip if already reactivating
+    // Double-check if this laser is already in reactivation phase or not active - don't count it again
+    if (reactivatingLasers[laserId] || !laserActivationMap[laserId]) {
+      return; // Skip if already reactivating or not active
     }
 
-    // Play laser broken sound effect
-    audioManager.playEffect(SoundEffect.LaserBroken);
+    // Use function form of setTriggeredCount to avoid race conditions with multiple lasers
+    setTriggeredCount((prevCount) => {
+      const newCount = prevCount + 1;
 
-    // Update triggered count
-    const newTriggeredCount = triggeredCount + 1;
-    setTriggeredCount(newTriggeredCount);
+      // Check if max triggers reached - moved inside to use the updated count
+      if (
+        laserConfig.gameSettings.maxAllowedTouches > 0 &&
+        newCount >= laserConfig.gameSettings.maxAllowedTouches
+      ) {
+        // Check if game over has already been triggered
+        if (!gameOverRef.current) {
+          gameOverRef.current = true;
+          // Use setTimeout to avoid state update during render
+          setTimeout(() => {
+            handleGameOver();
+            gameOverRef.current = false; // Reset the ref after game over
+          }, 0);
+        }
+      }
+
+      return newCount;
+    });
+
+    // Play laser broken sound effect only if game is running - now with debounce
+    playDebouncedSound(SoundEffect.LaserBroken);
+
+    // Immediately mark this laser as being in triggered state to prevent rapid retriggering
+    // This is in addition to the reactivatingLasers state which gets set after blinking
+    setLaserActivationMap((prevStates) => ({
+      ...prevStates,
+      [laserId]: false, // Set to false (gray/off) right away
+    }));
 
     // Start blinking animation
     setBlinkingLasers((prev) => ({
@@ -252,113 +281,109 @@ export const useGameLogic = () => {
       [laserId]: true,
     }));
 
-    // After blinking, set to triggered state (gray)
-    setTimeout(() => {
+    // After blinking, ensure triggered state and start reactivation if enabled
+    const blinkTimeout = setTimeout(() => {
       setBlinkingLasers((prev) => ({
         ...prev,
         [laserId]: false,
       }));
-      setLaserStates((prevStates) => ({
-        ...prevStates,
-        [laserId]: false,
-      }));
+
+      // Reset the laser if reactivation is enabled - move here to sync with end of blinking
+      if (laserConfig.gameSettings.reactivateLasers) {
+        startLaserReactivation(laserId);
+      }
     }, 900); // 3 blinks at 300ms each = 900ms
 
-    // Reset the laser if reactivation is enabled
-    if (laserConfig.gameSettings.reactivateLasers) {
-      // Mark this laser as being in reactivation phase
-      setReactivatingLasers((prev) => ({
-        ...prev,
-        [laserId]: true,
-      }));
-
-      // Clear any existing timeout and interval for this laser
-      if (reactivationTimeoutsRef.current[laserId]) {
-        clearTimeout(reactivationTimeoutsRef.current[laserId]);
-      }
-      if (reactivationIntervalsRef.current[laserId]) {
-        clearInterval(reactivationIntervalsRef.current[laserId]);
-      }
-
-      // Initialize progress
-      setReactivationProgress((prev) => ({
-        ...prev,
-        [laserId]: 0,
-      }));
-
-      // Set up progress updating interval
-      const reactivationTime = laserConfig.gameSettings.reactivationTimeSeconds * 1000;
-      const updateInterval = 50; // Update progress every 50ms for smooth animation
-      const totalSteps = reactivationTime / updateInterval;
-      let currentStep = 0;
-
-      reactivationIntervalsRef.current[laserId] = setInterval(() => {
-        currentStep++;
-        const newProgress = Math.min(100, (currentStep / totalSteps) * 100);
-
-        setReactivationProgress((prev) => ({
-          ...prev,
-          [laserId]: newProgress,
-        }));
-
-        if (currentStep >= totalSteps) {
-          clearInterval(reactivationIntervalsRef.current[laserId]);
-          delete reactivationIntervalsRef.current[laserId];
-        }
-      }, updateInterval);
-
-      // Set new timeout for reactivation completion
-      reactivationTimeoutsRef.current[laserId] = setTimeout(async () => {
-        // Check if game is still running before reactivating
-        if (!isGameRunning) return;
-
-        // Find the laser for this id
-        const laser = laserConfig.lasers.find((l) => l.id === laserId);
-        if (laser) {
-          try {
-            // Update UI
-            setLaserStates((prevStates) => ({
-              ...prevStates,
-              [laserId]: true,
-            }));
-
-            // Mark laser as no longer reactivating
-            setReactivatingLasers((prev) => {
-              const newState = { ...prev };
-              delete newState[laserId];
-              return newState;
-            });
-
-            // Reset progress after activation
-            setTimeout(() => {
-              setReactivationProgress((prev) => {
-                const newProgress = { ...prev };
-                delete newProgress[laserId];
-                return newProgress;
-              });
-            }, 200);
-
-            console.log(`Reactivated laser ${laser.name} (sensor index: ${laser.sensorIndex})`);
-          } catch (error) {
-            console.error("Failed to reactivate laser:", error);
-          }
-        }
-
-        // Remove the timeout reference after completion
-        delete reactivationTimeoutsRef.current[laserId];
-      }, reactivationTime);
-    }
-
-    // Check if max triggers reached
-    if (
-      laserConfig.gameSettings.maxAllowedTouches > 0 &&
-      newTriggeredCount >= laserConfig.gameSettings.maxAllowedTouches
-    ) {
-      handleGameOver();
-    }
+    // Store the timeout reference so it can be cleared during reset
+    animationTimeoutsRef.current.push(blinkTimeout);
   };
 
-  // Handle buzzer pressed
+  // New function to separate reactivation logic for better organization
+  const startLaserReactivation = (laserId: string) => {
+    // Mark this laser as being in reactivation phase
+    setReactivatingLasers((prev) => ({
+      ...prev,
+      [laserId]: true,
+    }));
+
+    // Clear any existing timeout and interval for this laser
+    if (reactivationTimeoutsRef.current[laserId]) {
+      clearTimeout(reactivationTimeoutsRef.current[laserId]);
+    }
+    if (reactivationIntervalsRef.current[laserId]) {
+      clearInterval(reactivationIntervalsRef.current[laserId]);
+    }
+
+    // Initialize progress
+    setReactivationProgress((prev) => ({
+      ...prev,
+      [laserId]: 0,
+    }));
+
+    // Set up progress updating interval
+    const reactivationTime = laserConfig.gameSettings.reactivationTimeSeconds * 1000;
+    const updateInterval = 50; // Update progress every 50ms for smooth animation
+    const totalSteps = reactivationTime / updateInterval;
+    let currentStep = 0;
+
+    reactivationIntervalsRef.current[laserId] = setInterval(() => {
+      currentStep++;
+      const newProgress = Math.min(100, (currentStep / totalSteps) * 100);
+
+      setReactivationProgress((prev) => ({
+        ...prev,
+        [laserId]: newProgress,
+      }));
+
+      if (currentStep >= totalSteps) {
+        clearInterval(reactivationIntervalsRef.current[laserId]);
+        delete reactivationIntervalsRef.current[laserId];
+      }
+    }, updateInterval);
+
+    // Set new timeout for reactivation completion
+    reactivationTimeoutsRef.current[laserId] = setTimeout(async () => {
+      // Check if game is still running before reactivating
+      if (!isGameRunning) return;
+
+      // Find the laser for this id
+      const laser = laserConfig.lasers.find((l) => l.id === laserId);
+      if (laser) {
+        try {
+          // Update UI
+          setLaserActivationMap((prevStates) => ({
+            ...prevStates,
+            [laserId]: true,
+          }));
+
+          // Mark laser as no longer reactivating
+          setReactivatingLasers((prev) => {
+            const newState = { ...prev };
+            delete newState[laserId];
+            return newState;
+          });
+
+          // Reset progress after activation
+          setTimeout(() => {
+            setReactivationProgress((prev) => {
+              const newProgress = { ...prev };
+              delete newProgress[laserId];
+              return newProgress;
+            });
+          }, 200);
+
+          console.log(`Reactivated laser ${laser.name} (sensor index: ${laser.sensorIndex})`);
+        } catch (error) {
+          console.error("Failed to reactivate laser:", error);
+        }
+      }
+
+      // Remove the timeout reference after completion
+      delete reactivationTimeoutsRef.current[laserId];
+    }, reactivationTime);
+  };
+
+  // Handle buzzer pressed - updated to ensure proper sound control
   const handleBuzzerPressed = async () => {
     await stopGame();
     // stop time, player has won
@@ -366,23 +391,60 @@ export const useGameLogic = () => {
     setShowSaveScore(true);
     setPlayerName("");
 
-    audioManager.playEffect(SoundEffect.Buzzer);
+    // Only play buzzer sound when stopping an active game
+    if (isGameRunning) {
+      playDebouncedSound(SoundEffect.Buzzer);
+    }
   };
 
-  // Handle game over
+  // Handle game over - updated to ensure proper sound control
   const handleGameOver = async () => {
-    audioManager.playEffect(SoundEffect.GameOver);
-    audioManager.stopBackgroundMusic();
+    // Release the global game state
+    GameStateManager.endGame();
+
+    // Only play game over sound if the game is running
+    if (isGameRunning) {
+      playDebouncedSound(SoundEffect.GameOver);
+      audioManager.stopBackgroundMusic();
+    }
+
     setIsGameRunning(false);
     setGameOver(true);
     setGameSuccess(false); // Game over means failure
   };
 
   const startGame = async () => {
+    // Don't allow starting multiple times simultaneously
+    if (isGameStarting) return;
+
+    // Check the global game state to prevent multiple games
+    if (!GameStateManager.canStartGame()) {
+      console.warn("Another game is already running");
+      return;
+    }
+
+    setIsGameStarting(true);
+
+    // Don't reset the entire debounce tracker, just ensure the countdown sound can play
+    const now = Date.now();
+    lastSoundPlayedRef.current = {
+      ...lastSoundPlayedRef.current,
+      [SoundEffect.Countdown]: now - 5000, // Ensure countdown can play by setting last played time to 5 seconds ago
+    };
+
+    // Play 3sec long countdown sound
+    playDebouncedSound(SoundEffect.Countdown, 3000);
+
+    // Wait for countdown to finish
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
     // If a game is already running, reset it first
     if (isGameRunning) {
       await resetGame();
     }
+
+    // Register this game as the active game
+    GameStateManager.startGame();
 
     // Clear all reactivation timeouts and intervals first
     Object.keys(reactivationTimeoutsRef.current).forEach((id) => {
@@ -405,6 +467,9 @@ export const useGameLogic = () => {
     setBlinkingLasers({});
     setReactivationProgress({});
 
+    setIsGameRunning(true);
+    setIsGameStarting(false); // Reset starting flag after game starts
+
     // Reset all lasers to active immediately
     const initialStates: { [id: string]: boolean } = {};
     laserConfig.lasers.forEach((laser) => {
@@ -412,30 +477,32 @@ export const useGameLogic = () => {
         initialStates[laser.id] = true;
       }
     });
-    setLaserStates(initialStates);
+    setLaserActivationMap(initialStates);
 
     // Play start sound and begin background music
-    audioManager.playEffect(SoundEffect.GameStart);
     audioManager.startBackgroundMusic();
-
-    setIsGameRunning(true);
-    lastGameStartRef.current = Date.now(); // Update last start time
   };
 
   const stopGame = async () => {
-    // Always play finish sound when button is clicked
-    audioManager.playEffect(SoundEffect.Buzzer);
-
     // Don't show success if game was never running
-    if (isGameRunning) {
+    const wasRunning = isGameRunning;
+
+    // Release the global game state
+    GameStateManager.endGame();
+
+    if (wasRunning) {
       setGameOver(true);
-      setGameSuccess(true); // Manual stop means success!
+      setGameSuccess(true); // Finish or buzzer means success!
       // Show save score UI if game was successful
       setShowSaveScore(true);
     }
 
     audioManager.stopBackgroundMusic();
     setIsGameRunning(false);
+
+    // Clear all animation timeouts
+    animationTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+    animationTimeoutsRef.current = [];
 
     // Clear all reactivation timeouts and intervals
     Object.keys(reactivationTimeoutsRef.current).forEach((id) => {
@@ -451,38 +518,33 @@ export const useGameLogic = () => {
     setBlinkingLasers({});
     setReactivationProgress({});
     setReactivatingLasers({});
+
+    // Only play finish sound when button is clicked during an active game
+    if (wasRunning) {
+      playDebouncedSound(SoundEffect.Buzzer);
+    }
   };
 
   const resetGame = async () => {
-    // Stop all sounds first
+    // Release the global game state
+    GameStateManager.endGame();
+
+    // Reset sound debouncing tracker
+    lastSoundPlayedRef.current = {};
+    setIsGameStarting(false); // Ensure starting flag is reset
+
+    // Stop all sounds immediately
     audioManager.stopAllAudio();
 
-    // Clear running timer if any
+    // Clear running game timer if any
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
 
-    // Reset all game state
-    setIsGameRunning(false);
-    setGameTime(0);
-    setTriggeredCount(0);
-    setGameOver(false);
-    setGameSuccess(false);
-    setShowSaveScore(false);
-    setPlayerName("");
-    setBlinkingLasers({});
-    setReactivationProgress({});
-    setReactivatingLasers({});
-
-    // Reset all lasers to active
-    const initialStates: { [id: string]: boolean } = {};
-    laserConfig.lasers.forEach((laser) => {
-      if (laser.enabled) {
-        initialStates[laser.id] = true;
-      }
-    });
-    setLaserStates(initialStates);
+    // Clear ALL animation timeouts
+    animationTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+    animationTimeoutsRef.current = [];
 
     // Clear all reactivation timeouts and intervals
     Object.keys(reactivationTimeoutsRef.current).forEach((id) => {
@@ -493,11 +555,36 @@ export const useGameLogic = () => {
     });
     reactivationTimeoutsRef.current = {};
     reactivationIntervalsRef.current = {};
+
+    // Force stop any ongoing animations by immediately setting states
+    setBlinkingLasers({});
+    setReactivationProgress({});
+    setReactivatingLasers({});
+
+    // Reset all game state variables
+    setIsGameRunning(false);
+    setGameTime(0);
+    setTriggeredCount(0);
+    setGameOver(false);
+    setGameSuccess(false);
+    setShowSaveScore(false);
+    setPlayerName("");
+
+    // Reset all lasers to active
+    const initialStates: { [id: string]: boolean } = {};
+    laserConfig.lasers.forEach((laser) => {
+      if (laser.enabled) {
+        initialStates[laser.id] = true;
+      }
+    });
+    setLaserActivationMap(initialStates);
   };
 
   const handleCloseGameOver = () => {
     setGameOver(false);
     setShowSaveScore(false);
+    setIsGameRunning(false);
+    setGameSuccess(false);
   };
 
   const handleSaveScore = async () => {
@@ -514,19 +601,30 @@ export const useGameLogic = () => {
       reactivationTimeSeconds: laserConfig.gameSettings.reactivationTimeSeconds,
     });
 
-    // Play success sound
-    audioManager.playEffect(SoundEffect.GameStart);
+    // Play success sound with debounce
+    playDebouncedSound(SoundEffect.GameStart);
 
     // Hide save score UI after saving
     setShowSaveScore(false);
     setPlayerName("");
   };
 
+  const playDebouncedSound = (sound: SoundEffect, soundDebounceTime = 150) => {
+    const now = Date.now();
+    const lastPlayed = lastSoundPlayedRef.current[sound] || 0;
+
+    // Only play if enough time has passed since last play
+    if (now - lastPlayed > soundDebounceTime) {
+      audioManager.playEffect(sound);
+      lastSoundPlayedRef.current[sound] = now;
+    }
+  };
+
   return {
     // Game state
     isGameRunning,
     gameTime,
-    laserStates,
+    laserStates: laserActivationMap,
     blinkingLasers,
     reactivationProgress,
     triggeredCount,
@@ -535,6 +633,7 @@ export const useGameLogic = () => {
     playerName,
     showSaveScore,
     useGridLayout,
+    isGameStarting, // Add this to return value if needed for UI
 
     // Methods
     setContainerRef,

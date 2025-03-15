@@ -4,6 +4,7 @@ export enum SoundEffect {
   GameOver = "GameOver",
   LaserBroken = "LaserBroken",
   Buzzer = "Buzzer",
+  Countdown = "Countdown",
 }
 
 export class AudioManager {
@@ -27,6 +28,7 @@ export class AudioManager {
       this.loadSoundEffect(SoundEffect.GameOver, ["./assets/audio/game_over.wav"]);
       this.loadSoundEffect(SoundEffect.LaserBroken, ["./assets/audio/laser_broken.wav"]);
       this.loadSoundEffect(SoundEffect.Buzzer, ["./assets/audio/game_finished.wav"]);
+      this.loadSoundEffect(SoundEffect.Countdown, ["./assets/audio/countdown.wav"]);
 
       // Set up background music with multiple format options
       this.backgroundMusic = new Audio();

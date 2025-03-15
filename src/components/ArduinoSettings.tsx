@@ -47,7 +47,7 @@ export const ArduinoSettings: React.FC = () => {
     refreshPorts();
 
     // Listen for serial data events
-    const unlistenSerialData = listen("serial-data", (event) => {
+    const unlistenSerialData = listen("laser-sensor-data", (event) => {
       setSerialData(event.payload as number[]);
     });
 
@@ -91,7 +91,7 @@ export const ArduinoSettings: React.FC = () => {
       const checkConnection = async () => {
         try {
           // Try to ping the Arduino or similar basic operation
-          await invoke("check_connection");
+          await invoke("check_connection", { port: selectedPort, baudRate });
         } catch (err) {
           // If check fails, we're not actually connected
           console.warn("Disconnecting due to failed connection check:", err);

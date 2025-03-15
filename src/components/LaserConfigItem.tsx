@@ -35,7 +35,7 @@ export const LaserConfigItem: React.FC<LaserConfigItemProps> = ({
 
   // Listen for serial data events from Arduino
   useEffect(() => {
-    const unlistenSerialData = listen("serial-data", (event) => {
+    const unlistenSerialData = listen("laser-sensor-data", (event) => {
       const sensorValues = event.payload as number[];
       if (sensorValues && sensorValues.length > laser.sensorIndex) {
         // Get the specific sensor value for this laser

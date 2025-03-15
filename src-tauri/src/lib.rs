@@ -55,6 +55,20 @@ fn list_ports() -> Result<Vec<String>, String> {
         .map(|ports| ports.into_iter().map(|p| p.port_name).collect())
 }
 
+#[tauri::command]
+fn check_connection(port: String, baud_rate: u32) -> Result<bool, String> {
+    let port_result = serialport::new(port.clone(), baud_rate)
+        .timeout(std::time::Duration::from_millis(1000))
+        .open();
+    match port_result {
+        Ok(_) => Ok(true),
+        Err(e) => {
+            eprintln!("failed to open port: {}", e);
+            Ok(false)
+        }
+    }
+}
+
 // Command to configure and start reading from a serial port.
 #[tauri::command]
 fn configure_serial(
@@ -86,6 +100,8 @@ fn configure_serial(
 
     let handle = thread::spawn(move || {
         let mut reader = BufReader::new(serial_port);
+        let mut last_buzzer_time = std::time::Instant::now();
+        let mut last_start_time = std::time::Instant::now();
 
         loop {
             // Check if a stop signal was received.
@@ -98,11 +114,18 @@ fn configure_serial(
                 Ok(n) if n > 0 => {
                     let trimmed = line.trim().to_string();
 
+                    let now = std::time::Instant::now();
                     // Special case for "buzzer" message
                     if trimmed == "buzzer" {
-                        let _ = app_handle_clone.emit("buzzer", true);
+                        if now.duration_since(last_buzzer_time).as_secs() >= 1 {
+                            let _ = app_handle_clone.emit("buzzer", true);
+                            last_buzzer_time = now;
+                        }
                     } else if trimmed == "start" {
-                        let _ = app_handle_clone.emit("start-button", true);
+                        if now.duration_since(last_start_time).as_secs() >= 1 {
+                            let _ = app_handle_clone.emit("start-button", true);
+                            last_start_time = now;
+                        }
                     } else {
                         // Parse comma separated values into integers
                         let values: Result<Vec<u16>, _> =
@@ -115,7 +138,7 @@ fn configure_serial(
                             }
 
                             // Emit formatted data
-                            let _ = app_handle_clone.emit("serial-data", parsed_values);
+                            let _ = app_handle_clone.emit("laser-sensor-data", parsed_values);
                         } else {
                             // Forward parse errors to the frontend.
                             let _ = app_handle_clone
@@ -165,6 +188,7 @@ pub fn run() {
             list_ports,
             configure_serial,
             stop_serial,
+            check_connection
         ])
         .setup(|app| {
             // set arduinoSettings.isConnected subfield to false on startup
