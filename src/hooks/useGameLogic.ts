@@ -278,17 +278,23 @@ export const useGameLogic = () => {
 
   // New function to update laser visual state only (no sounds, no counting)
   const updateLaserVisual = (laserId: string) => {
-    // Start blinking animation and update ref
-    blinkingLasersRef.current[laserId] = true;
     setBlinkingLasers((prev) => ({
       ...prev,
       [laserId]: true,
     }));
 
+    // Only add to blinking ref if game isn't running
+    // if (!isGameRunning) {
+    //   blinkingLasersRef.current[laserId] = true;
+    // }
+
     // After blinking, RESTORE to active state (red) when game isn't running
     const visualTimeout = setTimeout(() => {
       // Update ref when blinking ends
-      delete blinkingLasersRef.current[laserId];
+      // if (laserId in blinkingLasersRef.current) {
+      //   delete blinkingLasersRef.current[laserId];
+      // }
+
       setBlinkingLasers((prev) => ({
         ...prev,
         [laserId]: false,
@@ -314,9 +320,9 @@ export const useGameLogic = () => {
 
     // Double-check if this laser is already in reactivation phase or not active - don't count it again
     if (
-      reactivatingLasersRef.current[laserId] ||
+      laserId in reactivatingLasersRef.current ||
       !laserActivationMap[laserId] ||
-      blinkingLasersRef.current[laserId]
+      laserId in blinkingLasersRef.current
     ) {
       return; // Skip if already reactivating, blinking, or not active
     }
@@ -325,9 +331,8 @@ export const useGameLogic = () => {
     processingLasersRef.current[laserId] = true;
 
     // Play laser broken sound effect only if game is running - now with debounce
-    if (isGameRunning) {
-      playDebouncedSound(SoundEffect.LaserBroken);
-    }
+
+    playDebouncedSound(SoundEffect.LaserBroken);
 
     // Immediately mark this laser as being in triggered state to prevent rapid retriggering
     // This is in addition to the reactivatingLasers state which gets set after blinking
@@ -336,7 +341,8 @@ export const useGameLogic = () => {
       [laserId]: false, // Set to false (gray/off) right away
     }));
 
-    // Start blinking animation and update ref
+    // Start blinking animation and update ref - only if game is running
+
     blinkingLasersRef.current[laserId] = true;
     setBlinkingLasers((prev) => ({
       ...prev,
@@ -368,15 +374,18 @@ export const useGameLogic = () => {
 
     // After blinking, ensure triggered state and start reactivation if enabled
     const blinkTimeout = setTimeout(() => {
-      // Update the blinking ref
-      delete blinkingLasersRef.current[laserId];
+      // Update the blinking ref - only remove if it exists
+      if (laserId in blinkingLasersRef.current) {
+        delete blinkingLasersRef.current[laserId];
+      }
+
       setBlinkingLasers((prev) => ({
         ...prev,
         [laserId]: false,
       }));
 
       // Reset the laser if reactivation is enabled - move here to sync with end of blinking
-      if (laserConfig.gameSettings.reactivateLasers) {
+      if (laserConfig.gameSettings.reactivateLasers && isGameRunning) {
         startLaserReactivation(laserId);
       }
     }, 900); // 3 blinks at 300ms each = 900ms
@@ -387,12 +396,14 @@ export const useGameLogic = () => {
 
   // New function to separate reactivation logic for better organization
   const startLaserReactivation = (laserId: string) => {
-    // Mark this laser as being in reactivation phase - update both state and ref
-    reactivatingLasersRef.current[laserId] = true;
-    setReactivatingLasers((prev) => ({
-      ...prev,
-      [laserId]: true,
-    }));
+    // Only add to reactivating ref if game is running
+    if (isGameRunning) {
+      reactivatingLasersRef.current[laserId] = true;
+      setReactivatingLasers((prev) => ({
+        ...prev,
+        [laserId]: true,
+      }));
+    }
 
     // Remove from processing list as we're now in reactivation phase
     delete processingLasersRef.current[laserId];
@@ -435,7 +446,13 @@ export const useGameLogic = () => {
     // Set new timeout for reactivation completion
     reactivationTimeoutsRef.current[laserId] = setTimeout(async () => {
       // Check if game is still running before reactivating
-      if (!isGameRunning) return;
+      if (!isGameRunning) {
+        // If game is no longer running, make sure to clean up this laser from the ref
+        if (laserId in reactivatingLasersRef.current) {
+          delete reactivatingLasersRef.current[laserId];
+        }
+        return;
+      }
 
       // Find the laser for this id
       const laser = laserConfig.lasers.find((l) => l.id === laserId);
@@ -448,7 +465,10 @@ export const useGameLogic = () => {
           }));
 
           // Mark laser as no longer reactivating in both state and ref
-          delete reactivatingLasersRef.current[laserId];
+          if (laserId in reactivatingLasersRef.current) {
+            delete reactivatingLasersRef.current[laserId];
+          }
+
           setReactivatingLasers((prev) => {
             const newState = { ...prev };
             delete newState[laserId];
@@ -506,6 +526,10 @@ export const useGameLogic = () => {
     // Reset sound debouncing tracker
     lastSoundPlayedRef.current = {};
 
+    // Explicitly clear the refs for blinking and reactivating lasers
+    blinkingLasersRef.current = {};
+    reactivatingLasersRef.current = {};
+
     // Reset reactivating lasers state
     setReactivatingLasers({});
 
@@ -521,6 +545,9 @@ export const useGameLogic = () => {
     if (isGameRunning) {
       await resetGame();
     }
+
+    // Reset the processing lasers tracker
+    processingLasersRef.current = {};
 
     // Play 3sec long countdown sound
     playDebouncedSound(SoundEffect.Countdown, 3000);
@@ -600,6 +627,11 @@ export const useGameLogic = () => {
     reactivationTimeoutsRef.current = {};
     reactivationIntervalsRef.current = {};
 
+    // IMPORTANT: Also clear the refs for blinking and reactivating lasers
+    blinkingLasersRef.current = {};
+    reactivatingLasersRef.current = {};
+    processingLasersRef.current = {};
+
     // Clear animation states and reactivating lasers tracking
     setBlinkingLasers({});
     setReactivationProgress({});
@@ -618,7 +650,7 @@ export const useGameLogic = () => {
     // Reset the processing lasers tracker
     processingLasersRef.current = {};
 
-    // Also reset the new refs for blinking and reactivating lasers
+    // IMPORTANT: Explicitly clear the refs for blinking and reactivating lasers
     blinkingLasersRef.current = {};
     reactivatingLasersRef.current = {};
 
