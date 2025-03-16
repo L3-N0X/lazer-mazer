@@ -59,9 +59,9 @@ export const defaultLaserConfig: LaserConfigState = {
   },
   arduinoSettings: {
     port: "",
-    baudRate: 9600,
+    baudRate: 115200,
     isConnected: false,
-    autoConnectEnabled: true, // Default to enabled
+    autoConnectEnabled: false,
   },
   soundSettings: {
     masterVolume: 20,
