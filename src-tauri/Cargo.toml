@@ -1,6 +1,6 @@
 [package]
 name = "lazer-mazer"
-version = "0.1.0"
+version = "0.2.0"
 description = "DIY Lazer Maze UI"
 authors = ["L3N0X"]
 edition = "2021"
