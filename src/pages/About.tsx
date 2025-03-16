@@ -40,7 +40,7 @@ const About: React.FC = () => {
               testing your agility and precision.
             </Typography>
             <Typography variant="body1" component={"p"}>
-              Using laser pointers and a network of sensors, the system detects when a beam is
+              Usieckng laser pointers and a network of sensors, the system detects when a beam is
               broken, providing real-time feedback. If you break a certain number of beams, you lose
               the game. The game is designed to be fun and challenging for all ages, perfect for
               parties, team-building events, or family game nights.
