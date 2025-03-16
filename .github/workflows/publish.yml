@@ -39,7 +39,7 @@ jobs:
           path: |
             ~/.pnpm-store
             node_modules
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/package.json', 'pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
@@ -61,13 +61,22 @@ jobs:
       - name: install frontend dependencies
         run: |
           npm install -g pnpm
-          # Set PNPM_HOME directly and add to PATH
-          echo "PNPM_HOME=$HOME/Library/pnpm" >> $GITHUB_ENV
-          echo "$HOME/Library/pnpm" >> $GITHUB_PATH
-          # Install dependencies
-          pnpm install
+          # Set PNPM_HOME based on platform
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            echo "PNPM_HOME=$APPDATA/pnpm" >> $GITHUB_ENV
+            echo "$APPDATA/pnpm" >> $GITHUB_PATH
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            echo "PNPM_HOME=$HOME/Library/pnpm" >> $GITHUB_ENV
+            echo "$HOME/Library/pnpm" >> $GITHUB_PATH
+          else
+            echo "PNPM_HOME=$HOME/.local/share/pnpm" >> $GITHUB_ENV
+            echo "$HOME/.local/share/pnpm" >> $GITHUB_PATH
+          fi
+          # Force install dependencies to ensure everything is properly resolved
+          pnpm install --force
           # Install Tauri CLI (using npm instead of pnpm global)
           npm install -g @tauri-apps/cli
+        shell: bash
 
       - uses: tauri-apps/tauri-action@v0
         env:
